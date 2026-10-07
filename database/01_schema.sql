@@ -1,0 +1,289 @@
+-- =====================================================================
+-- 01_schema.sql — ระบบจองคิวนวดแผนไทย (สเปก v3)
+-- MySQL 8.0+ · utf8mb4
+--
+-- หมายเหตุเรื่องเวลา: คอลัมน์ TIMESTAMP เก็บเป็น UTC และแปลงตาม time_zone ของ session
+-- backend ต้องตั้ง time_zone = '+07:00' ทุก connection เพื่อให้ NOW()/CURDATE() เป็นเวลาไทย
+-- =====================================================================
+
+SET NAMES utf8mb4;   -- สำคัญ: กันภาษาไทยเพี้ยนตอนรันผ่าน CLI บน Windows
+
+USE thai_massage_booking;
+SET time_zone = '+07:00';
+
+-- ---------------------------------------------------------------------
+-- ผู้รับบริการ (มี HN หรือเป็นบุคคลทั่วไป)
+-- ---------------------------------------------------------------------
+CREATE TABLE patients (
+  patient_id      BIGINT AUTO_INCREMENT PRIMARY KEY,
+  patient_type    ENUM('HN','GENERAL') NOT NULL DEFAULT 'GENERAL',
+  hn              VARCHAR(20)  NULL,
+  first_name      VARCHAR(100) NOT NULL,
+  last_name       VARCHAR(100) NOT NULL,
+  phone_number    VARCHAR(15)  NOT NULL,
+  note            VARCHAR(255) NULL,
+  is_deleted      BOOLEAN NOT NULL DEFAULT FALSE,          -- soft delete
+  created_at      TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at      TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  UNIQUE KEY uq_hn (hn),                                    -- NULL ซ้ำกันได้ (บุคคลทั่วไป)
+  INDEX idx_phone (phone_number),
+  INDEX idx_name (first_name, last_name),
+  CONSTRAINT chk_hn_type CHECK (
+    (patient_type = 'HN' AND hn IS NOT NULL) OR (patient_type = 'GENERAL' AND hn IS NULL)
+  )
+);
+
+-- ---------------------------------------------------------------------
+-- ผู้จอง (บัญชี LINE)
+-- ---------------------------------------------------------------------
+CREATE TABLE line_users (
+  line_user_id     VARCHAR(50) PRIMARY KEY,
+  display_name     VARCHAR(200) NULL,
+  picture_url      VARCHAR(500) NULL,
+  self_patient_id  BIGINT NULL,                             -- ข้อมูลของตัวผู้จองเอง ("จองให้ตัวเอง")
+  pdpa_consent_at  TIMESTAMP NULL,
+  is_blocked       BOOLEAN NOT NULL DEFAULT FALSE,
+  created_at       TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  last_seen_at     TIMESTAMP NULL,
+  CONSTRAINT fk_lineuser_self FOREIGN KEY (self_patient_id) REFERENCES patients(patient_id)
+);
+
+-- รายชื่อผู้รับบริการที่ผู้จองเคยจองให้ (ครั้งหน้ากดเลือกได้เลย)
+CREATE TABLE booker_patients (
+  line_user_id  VARCHAR(50) NOT NULL,
+  patient_id    BIGINT NOT NULL,
+  relation      VARCHAR(50) NOT NULL DEFAULT 'ตนเอง',        -- ตนเอง / มารดา / บิดา / ...
+  created_at    TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (line_user_id, patient_id),
+  INDEX idx_bp_patient (patient_id),
+  CONSTRAINT fk_bp_lineuser FOREIGN KEY (line_user_id) REFERENCES line_users(line_user_id) ON DELETE CASCADE,
+  CONSTRAINT fk_bp_patient  FOREIGN KEY (patient_id)   REFERENCES patients(patient_id)
+);
+
+-- ---------------------------------------------------------------------
+-- หมอนวด / ผู้ใช้ระบบ
+-- ---------------------------------------------------------------------
+CREATE TABLE practitioners (
+  practitioner_id INT AUTO_INCREMENT PRIMARY KEY,
+  full_name       VARCHAR(200) NOT NULL,
+  license_no      VARCHAR(50)  NULL,
+  is_active       BOOLEAN NOT NULL DEFAULT TRUE,
+  created_at      TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE staff_users (
+  user_id              INT AUTO_INCREMENT PRIMARY KEY,
+  username             VARCHAR(50)  NOT NULL UNIQUE,
+  password_hash        VARCHAR(255) NOT NULL,              -- bcrypt
+  full_name            VARCHAR(200) NOT NULL,
+  role                 ENUM('ADMIN','STAFF','PRACTITIONER') NOT NULL,
+  practitioner_id      INT NULL,                           -- ใช้เมื่อ role = PRACTITIONER
+  must_change_password BOOLEAN NOT NULL DEFAULT TRUE,
+  is_active            BOOLEAN NOT NULL DEFAULT TRUE,
+  last_login_at        TIMESTAMP NULL,
+  created_at           TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at           TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  CONSTRAINT fk_staff_practitioner FOREIGN KEY (practitioner_id) REFERENCES practitioners(practitioner_id)
+);
+
+-- ---------------------------------------------------------------------
+-- รอบเวลา / วันหยุด / slot
+-- ---------------------------------------------------------------------
+-- แม่แบบรอบเวลา (CRUD ในหน้าแอดมิน) — cron ใช้สร้าง time_slots
+CREATE TABLE slot_templates (
+  template_id INT AUTO_INCREMENT PRIMARY KEY,
+  start_time  TIME NOT NULL,
+  end_time    TIME NOT NULL,
+  sort_order  INT  NOT NULL DEFAULT 0,
+  is_active   BOOLEAN NOT NULL DEFAULT TRUE,
+  UNIQUE KEY uq_template_start (start_time),
+  CONSTRAINT chk_template_time CHECK (end_time > start_time)
+);
+
+CREATE TABLE holidays (
+  holiday_date DATE PRIMARY KEY,
+  name         VARCHAR(200) NOT NULL,
+  created_by   INT NULL,
+  created_at   TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  CONSTRAINT fk_holiday_creator FOREIGN KEY (created_by) REFERENCES staff_users(user_id)
+);
+
+CREATE TABLE time_slots (
+  slot_id         BIGINT AUTO_INCREMENT PRIMARY KEY,
+  practitioner_id INT  NOT NULL,
+  slot_date       DATE NOT NULL,
+  start_time      TIME NOT NULL,
+  end_time        TIME NOT NULL,
+  is_blocked      BOOLEAN NOT NULL DEFAULT FALSE,
+  block_reason    VARCHAR(255) NULL,
+  created_at      TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE KEY uq_slot (practitioner_id, slot_date, start_time),   -- กัน cron สร้างซ้ำ
+  INDEX idx_slot_date (slot_date),
+  CONSTRAINT fk_slot_practitioner FOREIGN KEY (practitioner_id) REFERENCES practitioners(practitioner_id),
+  CONSTRAINT chk_slot_time CHECK (end_time > start_time)
+);
+
+-- ---------------------------------------------------------------------
+-- การจอง
+-- ---------------------------------------------------------------------
+CREATE TABLE appointments (
+  appointment_id         BIGINT AUTO_INCREMENT PRIMARY KEY,
+  booking_code           CHAR(6) NOT NULL,
+  patient_id             BIGINT  NOT NULL,                 -- ผู้รับบริการ
+  booked_by_line_user_id VARCHAR(50) NULL,                 -- ผู้จอง (NULL = เจ้าหน้าที่จองแทน / walk-in)
+  booked_by_staff        INT NULL,                         -- เจ้าหน้าที่ที่ทำรายการ
+  booker_relation        VARCHAR(50) NULL,                 -- ความสัมพันธ์ผู้จอง → ผู้รับบริการ
+  slot_id                BIGINT  NOT NULL,
+  booking_channel        ENUM('ONLINE','WALK_IN','STAFF') NOT NULL DEFAULT 'ONLINE',
+  chief_complaint        TEXT NULL,
+  status                 ENUM('BOOKED','CHECKED_IN','IN_SERVICE','COMPLETED','NO_SHOW','CANCELLED')
+                         NOT NULL DEFAULT 'BOOKED',
+  -- กันจองซ้อน: 1 slot มีคิวที่ "ยัง active" ได้แค่ 1 คิว
+  -- คิว CANCELLED / NO_SHOW จะได้ค่า NULL → ปล่อย slot ให้ walk-in จองซ้ำได้
+  active_slot_id         BIGINT GENERATED ALWAYS AS
+                         (IF(status IN ('CANCELLED','NO_SHOW'), NULL, slot_id)) STORED,
+  confirmed_at           TIMESTAMP NULL,                   -- กดยืนยันตอนเตือน 2 ชม.
+  checked_in_at          TIMESTAMP NULL,
+  checked_in_by          INT NULL,
+  cancelled_at           TIMESTAMP NULL,
+  cancelled_by           ENUM('PATIENT','STAFF','SYSTEM') NULL,
+  cancel_reason          VARCHAR(255) NULL,
+  created_at             TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at             TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  UNIQUE KEY uq_booking_code (booking_code),
+  UNIQUE KEY uq_active_slot (active_slot_id),
+  INDEX idx_patient_status (patient_id, status),
+  INDEX idx_booker (booked_by_line_user_id),
+  INDEX idx_slot (slot_id),
+  INDEX idx_status (status),
+  CONSTRAINT fk_appt_patient   FOREIGN KEY (patient_id)             REFERENCES patients(patient_id),
+  CONSTRAINT fk_appt_booker    FOREIGN KEY (booked_by_line_user_id) REFERENCES line_users(line_user_id),
+  CONSTRAINT fk_appt_staff     FOREIGN KEY (booked_by_staff)        REFERENCES staff_users(user_id),
+  CONSTRAINT fk_appt_slot      FOREIGN KEY (slot_id)                REFERENCES time_slots(slot_id),
+  CONSTRAINT fk_appt_checkinby FOREIGN KEY (checked_in_by)          REFERENCES staff_users(user_id)
+);
+
+-- บันทึกการให้บริการ (ลงเวชระเบียน)
+CREATE TABLE service_records (
+  record_id           BIGINT AUTO_INCREMENT PRIMARY KEY,
+  appointment_id      BIGINT NOT NULL UNIQUE,
+  treatment_details   TEXT NULL,
+  post_treatment_note TEXT NULL,
+  service_start       TIMESTAMP NULL,
+  service_end         TIMESTAMP NULL,
+  recorded_by         INT NULL,
+  created_at          TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at          TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  CONSTRAINT fk_sr_appt  FOREIGN KEY (appointment_id) REFERENCES appointments(appointment_id),
+  CONSTRAINT fk_sr_staff FOREIGN KEY (recorded_by)    REFERENCES staff_users(user_id)
+);
+
+-- ---------------------------------------------------------------------
+-- ระงับสิทธิ์ (no-show)
+-- ---------------------------------------------------------------------
+CREATE TABLE patient_suspensions (
+  suspension_id BIGINT AUTO_INCREMENT PRIMARY KEY,
+  patient_id    BIGINT NOT NULL,
+  start_date    DATE NOT NULL,
+  end_date      DATE NOT NULL,
+  reason        VARCHAR(255) NOT NULL,
+  source        ENUM('AUTO','MANUAL') NOT NULL,
+  created_by    INT NULL,
+  lifted_at     TIMESTAMP NULL,                            -- ปลดก่อนกำหนด
+  lifted_by     INT NULL,
+  created_at    TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  INDEX idx_susp_patient (patient_id, end_date),
+  CONSTRAINT fk_susp_patient FOREIGN KEY (patient_id) REFERENCES patients(patient_id),
+  CONSTRAINT fk_susp_creator FOREIGN KEY (created_by) REFERENCES staff_users(user_id),
+  CONSTRAINT fk_susp_lifter  FOREIGN KEY (lifted_by)  REFERENCES staff_users(user_id),
+  CONSTRAINT chk_susp_dates CHECK (end_date >= start_date)
+);
+
+-- ---------------------------------------------------------------------
+-- การแจ้งเตือน
+-- ---------------------------------------------------------------------
+CREATE TABLE notification_templates (
+  type        ENUM('BOOKED','REMIND_1D','REMIND_2H','CANCELLED','HOLIDAY_CANCELLED','SUSPENDED') PRIMARY KEY,
+  title       VARCHAR(100) NOT NULL,
+  body        TEXT NOT NULL,     -- ตัวแปร: {patient_name} {date} {time} {code} {reason} {end_date} {rebook_url}
+  is_enabled  BOOLEAN NOT NULL DEFAULT TRUE,
+  updated_at  TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+);
+
+CREATE TABLE notification_logs (
+  log_id         BIGINT AUTO_INCREMENT PRIMARY KEY,
+  appointment_id BIGINT NULL,
+  line_user_id   VARCHAR(50) NOT NULL,
+  type           VARCHAR(30) NOT NULL,
+  channel        ENUM('PUSH','LIFF') NOT NULL DEFAULT 'PUSH',   -- LIFF = liff.sendMessages (ไม่กินโควตา)
+  status         ENUM('SENT','FAILED','SKIPPED') NOT NULL,     -- SKIPPED = โหมด LOCAL / ยังไม่ตั้งค่า LINE
+  error_message  VARCHAR(500) NULL,
+  sent_at        TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE KEY uq_once (appointment_id, type),               -- กันส่งซ้ำต่อคิว
+  INDEX idx_sent_at (sent_at),
+  CONSTRAINT fk_nl_appt FOREIGN KEY (appointment_id) REFERENCES appointments(appointment_id)
+);
+
+-- ---------------------------------------------------------------------
+-- ตั้งค่าระบบ (CRUD ในหน้าแอดมิน)
+-- ---------------------------------------------------------------------
+CREATE TABLE settings (
+  setting_key   VARCHAR(50) PRIMARY KEY,
+  setting_value VARCHAR(1000) NOT NULL DEFAULT '',
+  label         VARCHAR(255) NOT NULL,
+  category      ENUM('BOOKING','SUSPENSION','GENERAL','CONNECTION') NOT NULL,
+  value_type    ENUM('INT','BOOL','STRING','SECRET') NOT NULL DEFAULT 'INT',  -- SECRET = เข้ารหัสโดย backend
+  sort_order    INT NOT NULL DEFAULT 0,
+  updated_at    TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+);
+
+-- ---------------------------------------------------------------------
+-- Audit log (PDPA: ใครแก้อะไร เมื่อไร)
+-- ---------------------------------------------------------------------
+CREATE TABLE audit_logs (
+  audit_id    BIGINT AUTO_INCREMENT PRIMARY KEY,
+  actor_type  ENUM('STAFF','LINE','SYSTEM') NOT NULL,
+  actor_id    VARCHAR(50) NULL,
+  action      VARCHAR(50) NOT NULL,                        -- CREATE / UPDATE / DELETE / CHECK_IN / CANCEL ...
+  entity      VARCHAR(50) NOT NULL,                        -- appointments / patients / settings ...
+  entity_id   VARCHAR(50) NULL,
+  detail      JSON NULL,
+  ip_address  VARCHAR(45) NULL,
+  created_at  TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  INDEX idx_audit_entity (entity, entity_id),
+  INDEX idx_audit_created (created_at)
+);
+
+-- ---------------------------------------------------------------------
+-- View: รายละเอียดคิว (ใช้กับหน้าคิววันนี้ / ค้นหา / รายงาน)
+-- ---------------------------------------------------------------------
+CREATE VIEW v_appointment_details AS
+SELECT
+  a.appointment_id, a.booking_code, a.status, a.booking_channel,
+  s.slot_id, s.slot_date, s.start_time, s.end_time, s.practitioner_id,
+  p.patient_id, p.patient_type, p.hn, p.first_name, p.last_name, p.phone_number,
+  a.booked_by_line_user_id, lu.display_name AS booker_line_name, a.booker_relation,
+  a.booked_by_staff, a.chief_complaint,
+  a.confirmed_at, a.checked_in_at, a.cancelled_at, a.cancelled_by, a.cancel_reason,
+  sr.service_start, sr.service_end, a.created_at
+FROM appointments a
+JOIN time_slots s       ON s.slot_id = a.slot_id
+JOIN patients p         ON p.patient_id = a.patient_id
+LEFT JOIN line_users lu ON lu.line_user_id = a.booked_by_line_user_id
+LEFT JOIN service_records sr ON sr.appointment_id = a.appointment_id;
+
+-- View: slot พร้อมคิวที่ active (ใช้หาว่ารอบไหนว่าง)
+CREATE VIEW v_slot_availability AS
+SELECT
+  s.slot_id, s.practitioner_id, s.slot_date, s.start_time, s.end_time,
+  s.is_blocked, s.block_reason,
+  a.appointment_id, a.status,
+  CASE
+    WHEN h.holiday_date IS NOT NULL THEN 'HOLIDAY'
+    WHEN s.is_blocked                THEN 'BLOCKED'
+    WHEN a.appointment_id IS NULL    THEN 'AVAILABLE'
+    ELSE 'TAKEN'
+  END AS availability
+FROM time_slots s
+LEFT JOIN appointments a ON a.active_slot_id = s.slot_id
+LEFT JOIN holidays h     ON h.holiday_date = s.slot_date;

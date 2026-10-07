@@ -1,0 +1,64 @@
+# ทดสอบ API ด้วย VS Code extension "REST Client" (humao.rest-client)
+# กด "Send Request" เหนือแต่ละ request ได้เลย — cookie ล็อกอินจะถูกจำให้อัตโนมัติ
+
+@pub = http://localhost:4000/api/public
+@int = http://localhost:4001/api
+@lineUser = Udev00000000000000000000000000001
+
+### ===================== ผู้จอง (โหมด LOCAL ใช้ผู้ใช้จำลอง) =====================
+
+GET {{pub}}/config
+
+###
+GET {{pub}}/me
+X-Dev-Line-User: {{lineUser}}
+
+###
+GET {{pub}}/availability
+X-Dev-Line-User: {{lineUser}}
+
+### จอง (เปลี่ยน slot_id ตามผลของ /availability)
+POST {{pub}}/bookings
+X-Dev-Line-User: {{lineUser}}
+Content-Type: application/json
+
+{ "patient_id": 1, "slot_id": 9, "chief_complaint": "ปวดหลัง" }
+
+###
+GET {{pub}}/bookings
+X-Dev-Line-User: {{lineUser}}
+
+### ===================== เจ้าหน้าที่ =====================
+
+POST {{int}}/auth/login
+Content-Type: application/json
+
+{ "username": "counter1", "password": "admin1234" }
+
+###
+GET {{int}}/staff/queue
+
+###
+GET {{int}}/staff/appointments/code/R6NC2V
+
+### เช็กอิน (force=true ข้ามคำเตือนมาเร็ว/สาย)
+POST {{int}}/staff/appointments/3/checkin
+Content-Type: application/json
+
+{ "force": true }
+
+### ===================== แอดมิน =====================
+
+POST {{int}}/auth/login
+Content-Type: application/json
+
+{ "username": "admin", "password": "admin1234" }
+
+###
+GET {{int}}/admin/settings
+
+### ตั้งวันหยุด (ถ้ามีคิวจะได้ 409 HAS_BOOKINGS → ส่งซ้ำพร้อม confirm: true)
+POST {{int}}/admin/holidays
+Content-Type: application/json
+
+{ "date": "2026-10-09", "name": "วันหยุดทดสอบ" }
