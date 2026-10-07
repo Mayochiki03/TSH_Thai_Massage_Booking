@@ -15,7 +15,7 @@ npm run dev
 | ผู้จอง | http://localhost:5173 | เลือกผู้ใช้จำลองจากเมนูนักพัฒนา |
 | หน้างาน | http://localhost:5173/staff | `counter1`, `therapist1` |
 | ผู้ดูแลระบบ | http://localhost:5173/admin | `admin`, `dev` |
-| Kiosk | http://localhost:5173/kiosk | `kiosk1` |
+| Kiosk | http://localhost:5173/kiosk | `kiosk1` (ออก: กดค้างโลโก้ 3 วิ แล้วใส่รหัส) |
 
 Vite ส่งต่อ API: `/api/public/*` → :4000, `/api/*` → :4001
 ลองบนมือถือ/แท็บเล็ตใน Wi-Fi เดียวกัน: `http://<IP เครื่อง>:5173` (ดู IP ด้วย `ipconfig`)

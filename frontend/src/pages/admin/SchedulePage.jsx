@@ -1,7 +1,7 @@
 /**
  * pages/admin/SchedulePage.jsx — รอบเวลาและตาราง
  *
- *  1) แม่แบบรอบเวลา (CRUD /api/admin/slot-templates)
+ *  1) แม่แบบรอบเวลา (CRUD /api/admin/slot-templates) — เลือกเวลาด้วย TimePicker (24 ชม. ไม่มี AM/PM)
  *     แก้เวลาแล้วกด "ใช้กับวันถัดไป" → ระบบลบรอบที่ยังไม่มีใครจองตั้งแต่พรุ่งนี้ แล้วสร้างใหม่ตามแม่แบบ
  *  2) ตารางรายวัน (GET /api/admin/slots) — ดูสถานะทุกรอบของวันที่เลือก, ปิด/เปิดรับรายรอบหรือทั้งวัน
  */
@@ -12,6 +12,7 @@ import { useLoad } from '../../lib/useLoad.js';
 import { thaiDateLong, todayYmd, addDays, hhmm } from '../../lib/format.js';
 import { Button, Card, PageHeader, Spinner, StatusBadge, useToast, useConfirm, cx } from '../../components/ui.jsx';
 import { ClosureSheet } from '../../components/ClosureSheet.jsx';
+import { TimePicker } from '../../components/TimePicker.jsx';
 
 export function SchedulePage() {
   return (
@@ -85,15 +86,14 @@ function Templates() {
             {data.map((t, i) => (
               <li key={t.template_id ?? `new-${i}`} className="flex flex-wrap items-center gap-3 py-3">
                 <span className="w-8 font-display text-faint">{i + 1}</span>
-                <label className="flex items-center gap-2">
-                  <span className="sr-only">เวลาเริ่ม</span>
-                  <input type="time" value={hhmm(t.start_time)} onChange={(e) => edit(i, { start_time: e.target.value })} className="h-11 rounded-xl border border-line bg-paper px-3 font-display text-[17px]" />
-                </label>
+                <TimePicker label={`รอบ ${i + 1} เวลาเริ่ม`} value={hhmm(t.start_time)} onChange={(v) => edit(i, { start_time: v })} />
                 <span className="text-muted">ถึง</span>
-                <label>
-                  <span className="sr-only">เวลาสิ้นสุด</span>
-                  <input type="time" value={hhmm(t.end_time)} onChange={(e) => edit(i, { end_time: e.target.value })} className="h-11 rounded-xl border border-line bg-paper px-3 font-display text-[17px]" />
-                </label>
+                <TimePicker
+                  label={`รอบ ${i + 1} เวลาสิ้นสุด`}
+                  value={hhmm(t.end_time)}
+                  onChange={(v) => edit(i, { end_time: v })}
+                  invalid={hhmm(t.end_time) <= hhmm(t.start_time)}
+                />
                 <label className="flex items-center gap-2 text-[15px]">
                   <input type="checkbox" checked={!!t.is_active} onChange={(e) => edit(i, { is_active: e.target.checked })} className="size-5 accent-herb" />
                   เปิดใช้

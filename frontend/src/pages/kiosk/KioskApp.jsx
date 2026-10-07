@@ -15,11 +15,17 @@
  *   - ไม่มีคนใช้งานเกิน kiosk_idle_sec วินาที → ถามว่ายังใช้อยู่ไหม แล้วกลับหน้าแรกเอง
  *
  * ต้องล็อกอินด้วยบัญชี KIOSK ครั้งเดียวตอนติดตั้งเครื่อง (session 30 วัน)
+ *
+ * การออกจากหน้า kiosk:
+ *   - บัญชี KIOSK (เครื่องจริง): ไม่มีปุ่มให้เห็น — เจ้าหน้าที่กดค้างที่โลโก้ 3 วินาที
+ *     แล้วใส่รหัสผ่านของบัญชี kiosk → ออกจากระบบ (กันผู้ป่วยกดออกเอง)
+ *   - บัญชี ADMIN / DEV (เปิดดูตัวอย่าง): แถบล่างมีปุ่ม "กลับหน้าผู้ดูแล" ให้เห็นชัด
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { CalendarPlus, ScanLine, ChevronLeft, Delete, Check, Hand, CircleAlert, Home } from 'lucide-react';
+import { useNavigate } from 'react-router';
+import { CalendarPlus, ScanLine, ChevronLeft, Delete, Check, Hand, CircleAlert, Home, LayoutDashboard, LockKeyhole } from 'lucide-react';
 import { staffApi } from '../../lib/api.js';
-import { SessionGate } from '../../lib/session.jsx';
+import { SessionGate, useSession, homeFor } from '../../lib/session.jsx';
 import { relativeDay, weekdayShort, dayNum, monthShort, thaiDateLong, todayYmd } from '../../lib/format.js';
 import { CompressMark } from '../../components/Logo.jsx';
 import { cx } from '../../components/ui.jsx';
@@ -44,7 +50,11 @@ function Kiosk() {
   const [screen, setScreen] = useState('home'); // home | book | checkin
   const [resetKey, setResetKey] = useState(0);  // เปลี่ยนค่า = ล้าง state ของ flow ทั้งหมด
   const [idleWarn, setIdleWarn] = useState(false);
+  const [exitOpen, setExitOpen] = useState(false); // หน้าต่างใส่รหัสเพื่อออกจาก kiosk
   const lastTouch = useRef(Date.now());
+  const { user } = useSession();
+  const navigate = useNavigate();
+  const isPreview = user.role !== 'KIOSK'; // ADMIN / DEV เปิดดูตัวอย่าง
 
   useEffect(() => { staffApi('/kiosk/config').then(setConfig).catch(() => setConfig({ kiosk_idle_sec: 60 })); }, []);
 
@@ -67,20 +77,30 @@ function Kiosk() {
 
   return (
     <div className="flex h-dvh flex-col overflow-hidden bg-ivory text-ink select-none" style={{ fontSize: 'clamp(16px, 2.3vmin, 34px)' }}>
-      <TopBar clinic={config?.clinic_name} />
+      <TopBar clinic={config?.clinic_name} onLongPress={isPreview ? undefined : () => setExitOpen(true)} />
       <main className="min-h-0 flex-1 overflow-y-auto px-[1.5em] py-[1em]">
         {screen === 'home' && <HomeScreen onBook={() => setScreen('book')} onCheckIn={() => setScreen('checkin')} />}
         {screen === 'book' && <BookFlow key={`b${resetKey}`} onHome={goHome} />}
         {screen === 'checkin' && <CheckInFlow key={`c${resetKey}`} onHome={goHome} />}
       </main>
       <footer className="flex items-center justify-between gap-[1em] border-t border-line bg-paper px-[1.5em] py-[0.6em] text-[0.85em] text-muted">
-        <span>ต้องการความช่วยเหลือ ติดต่อเจ้าหน้าที่ที่เคาน์เตอร์{config?.counter_phone ? ` โทร ${config.counter_phone}` : ''}</span>
-        {screen !== 'home' && (
-          <button type="button" onClick={goHome} className="flex items-center gap-[0.4em] rounded-[0.6em] px-[0.8em] py-[0.4em] text-ink hover:bg-sand">
-            <Home className="size-[1.2em]" aria-hidden />หน้าแรก
-          </button>
-        )}
+        <span className="min-w-0">ต้องการความช่วยเหลือ ติดต่อเจ้าหน้าที่ที่เคาน์เตอร์{config?.counter_phone ? ` โทร ${config.counter_phone}` : ''}</span>
+        <div className="flex shrink-0 items-center gap-[0.5em]">
+          {screen !== 'home' && (
+            <button type="button" onClick={goHome} className="flex items-center gap-[0.4em] rounded-[0.6em] px-[0.8em] py-[0.4em] text-ink hover:bg-sand">
+              <Home className="size-[1.2em]" aria-hidden />หน้าแรก
+            </button>
+          )}
+          {isPreview && (
+            <button type="button" onClick={() => navigate(homeFor(user.role))}
+              className="flex items-center gap-[0.4em] rounded-[0.6em] border border-clay-soft bg-sand px-[0.8em] py-[0.4em] text-clay hover:bg-clay-soft">
+              <LayoutDashboard className="size-[1.2em]" aria-hidden />โหมดตัวอย่าง: กลับหน้าผู้ดูแล
+            </button>
+          )}
+        </div>
       </footer>
+
+      {exitOpen && <ExitDialog onClose={() => setExitOpen(false)} />}
 
       {idleWarn && (
         <div className="fixed inset-0 z-50 grid place-items-center bg-ink/50 p-[1.5em]" role="alertdialog" aria-label="ยังใช้งานอยู่ไหม">
@@ -98,15 +118,27 @@ function Kiosk() {
   );
 }
 
-/** แถบบน: ชื่อคลินิก + นาฬิกา */
-function TopBar({ clinic }) {
+/**
+ * แถบบน: ชื่อคลินิก + นาฬิกา
+ * onLongPress: กดค้างที่โลโก้ 3 วินาที (ทางออกลับสำหรับเจ้าหน้าที่ บนเครื่อง kiosk จริง)
+ */
+function TopBar({ clinic, onLongPress }) {
   const [now, setNow] = useState(new Date());
+  const holdTimer = useRef(null);
+  const startHold = () => { if (onLongPress) holdTimer.current = setTimeout(onLongPress, 3000); };
+  const cancelHold = () => clearTimeout(holdTimer.current);
   useEffect(() => { const t = setInterval(() => setNow(new Date()), 15_000); return () => clearInterval(t); }, []);
   const time = new Intl.DateTimeFormat('th-TH', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Bangkok' }).format(now);
   return (
     <header className="flex items-center justify-between gap-[1em] border-b border-line bg-paper px-[1.5em] py-[0.7em]">
       <div className="flex min-w-0 items-center gap-[0.6em]">
-        <CompressMark className="size-[2.4em] shrink-0" />
+        <span
+          onPointerDown={startHold} onPointerUp={cancelHold} onPointerLeave={cancelHold} onPointerCancel={cancelHold}
+          onContextMenu={(e) => e.preventDefault()}
+          className="shrink-0 touch-none"
+        >
+          <CompressMark className="size-[2.4em]" />
+        </span>
         <div className="min-w-0 leading-tight">
           <div className="truncate font-display text-[1.15em] font-semibold">{clinic ?? 'คลินิกแพทย์แผนไทย'}</div>
           <div className="text-[0.8em] text-clay">จุดบริการตนเอง</div>
@@ -117,6 +149,45 @@ function TopBar({ clinic }) {
         <div className="text-[0.8em] text-muted">{thaiDateLong(todayYmd())}</div>
       </div>
     </header>
+  );
+}
+
+/**
+ * หน้าต่างออกจากโหมด kiosk (เฉพาะเจ้าหน้าที่) — ใส่รหัสผ่านของบัญชี kiosk ที่ล็อกอินอยู่
+ * ถูกต้อง → ออกจากระบบ แล้วไปหน้าเข้าสู่ระบบของหน้างาน (เจ้าหน้าที่ล็อกอินบัญชีตัวเองต่อได้)
+ */
+function ExitDialog({ onClose }) {
+  const [pw, setPw] = useState('');
+  const [error, setError] = useState('');
+  const [busy, setBusy] = useState(false);
+  const { logout } = useSession();
+  const navigate = useNavigate();
+
+  const submit = async (e) => {
+    e.preventDefault();
+    setBusy(true); setError('');
+    try {
+      await staffApi('/auth/verify-password', { method: 'POST', body: { password: pw } });
+      await logout();
+      navigate('/staff', { replace: true });
+    } catch (err) { setError(err.message); setBusy(false); }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 grid place-items-center bg-ink/50 p-[1.5em]" role="dialog" aria-modal="true" aria-label="ออกจากโหมด kiosk">
+      <form onSubmit={submit} className="anim-rise w-full max-w-[22em] rounded-[1.2em] bg-paper p-[1.5em]">
+        <LockKeyhole className="size-[2em] text-clay" aria-hidden />
+        <p className="mt-[0.4em] font-display text-[1.3em] font-semibold">ออกจากโหมด kiosk</p>
+        <p className="mt-[0.2em] text-[0.9em] text-muted">สำหรับเจ้าหน้าที่ ใส่รหัสผ่านของบัญชีเครื่อง kiosk</p>
+        <input type="password" value={pw} onChange={(e) => setPw(e.target.value)} autoFocus autoComplete="current-password"
+          className="mt-[0.8em] h-[2.6em] w-full rounded-[0.8em] border-2 border-line px-[0.8em] focus:border-herb focus:outline-none" aria-label="รหัสผ่าน" />
+        <ErrorBox>{error}</ErrorBox>
+        <div className="mt-[1em] flex gap-[0.6em]">
+          <button type="button" onClick={onClose} className="h-[2.8em] flex-1 rounded-[0.8em] border-2 border-line font-display">ยกเลิก</button>
+          <button type="submit" disabled={!pw || busy} className="h-[2.8em] flex-1 rounded-[0.8em] bg-herb font-display text-white disabled:bg-line disabled:text-faint">ออกจาก kiosk</button>
+        </div>
+      </form>
+    </div>
   );
 }
 

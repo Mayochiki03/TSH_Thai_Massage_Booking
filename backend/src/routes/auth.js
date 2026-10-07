@@ -65,6 +65,21 @@ authRouter.post('/change-password', requireStaff, ah(async (req, res) => {
   res.json({ ok: true });
 }));
 
+/**
+ * ยืนยันรหัสผ่านของบัญชีที่ล็อกอินอยู่ (ไม่เปลี่ยน session)
+ * ใช้ตอนเจ้าหน้าที่จะออกจากหน้า kiosk — กันผู้ป่วยกดออกจากโหมด kiosk เอง
+ * จำกัดจำนวนครั้งเหมือนการล็อกอิน (ผิดได้ 10 ครั้ง / 15 นาที)
+ */
+authRouter.post('/verify-password', loginLimiter, requireStaff, ah(async (req, res) => {
+  const password = z.string().min(1).parse(req.body?.password);
+  const row = await queryOne('SELECT password_hash FROM staff_users WHERE user_id = ?', [req.staff.user_id]);
+  if (!(await bcrypt.compare(password, row.password_hash))) {
+    await audit(req, 'VERIFY_PASSWORD_FAILED', 'staff_users', req.staff.user_id);
+    throw badRequest('WRONG_PASSWORD', 'รหัสผ่านไม่ถูกต้อง');
+  }
+  res.json({ ok: true });
+}));
+
 function publicUser(u) {
   return {
     user_id: u.user_id, username: u.username, full_name: u.full_name, role: u.role,

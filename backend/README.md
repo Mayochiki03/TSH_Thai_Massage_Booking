@@ -95,7 +95,7 @@ src/
 ### เจ้าหน้าที่ — `:4001/api`
 | Method | Path | |
 |---|---|---|
-| POST | `/auth/login` · `/auth/logout` · `/auth/change-password` | |
+| POST | `/auth/login` · `/auth/logout` · `/auth/change-password` · `/auth/verify-password` | verify-password = ยืนยันรหัสก่อนออกจาก kiosk |
 | GET | `/auth/me` | |
 | GET | `/staff/queue?date=` | คิวรายวัน (ทุกรอบ + ประวัติ) |
 | GET | `/staff/appointments/code/:code` | หาจากรหัสจอง |
