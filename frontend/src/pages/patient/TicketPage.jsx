@@ -1,3 +1,12 @@
+/**
+ * pages/patient/TicketPage.jsx — e-ticket ของการจอง 1 คิว (/ticket/:code)
+ *
+ *  - จองเสร็จใหม่ (?new=1)    : แสดง "จองสำเร็จ" + ส่งตั๋วเข้าแชท LINE อัตโนมัติ 1 ครั้ง
+ *  - ลิงก์จากข้อความเตือน LINE : ?action=confirm → ยืนยันมาตามนัด, ?action=cancel → ถามยืนยันการยกเลิก
+ *  - ยกเลิกได้ถึง patient_cancel_min นาทีก่อนนัด หลังจากนั้นแสดงเบอร์โทรเคาน์เตอร์แทน
+ *
+ * Responsive: มือถือเรียงบนลงล่าง / จอกว้างวางตั๋วซ้าย + ปุ่มและคำแนะนำขวา
+ */
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router';
 import { Phone, CalendarPlus, ListOrdered, CircleCheck, XCircle } from 'lucide-react';
@@ -78,9 +87,9 @@ export function TicketPage() {
   const rel = relativeDay(t.slot_date);
 
   return (
-    <div className="px-5 pt-2 pb-10">
+    <div className="mx-auto max-w-4xl pt-6 pb-10 lg:pt-10">
       {isNew && t.status === 'BOOKED' && (
-        <div className="mb-5 flex items-center gap-3">
+        <div className="mb-6 flex items-center gap-3">
           <svg viewBox="0 0 40 40" className="anim-pop size-12 shrink-0" aria-hidden>
             <circle cx="20" cy="20" r="20" fill="#2F6B4F" />
             <path d="M12 20.5l5.5 5.5L28.5 15" fill="none" stroke="#fff" strokeWidth="3.2" strokeLinecap="round" strokeLinejoin="round" className="check-draw" />
@@ -92,6 +101,7 @@ export function TicketPage() {
         </div>
       )}
 
+      <div className="grid gap-8 md:grid-cols-[minmax(0,420px)_1fr] md:items-start">
       {/* ตั๋ว */}
       <article
         className={cx('anim-rise overflow-hidden rounded-[22px] border border-line bg-paper', inactive && 'opacity-75')}
@@ -144,14 +154,18 @@ export function TicketPage() {
         </dl>
 
         {t.status === 'BOOKED' && (
-          <div className="mx-6 mb-6 rounded-xl bg-turmeric-soft px-4 py-3 text-[15px] text-[#6b520c]">
+          <div className="mx-6 mb-6 rounded-xl bg-turmeric-soft px-4 py-3 text-[15px] text-[#6b520c] md:hidden">
             แสดงรหัสนี้ที่เคาน์เตอร์แพทย์แผนไทย ก่อนเวลานัด 10–15 นาที
           </div>
         )}
       </article>
 
-      {/* การกระทำ */}
-      <div className="mt-6 space-y-3">
+      {/* การกระทำ + คำแนะนำ */}
+      <div className="space-y-3">
+        <div className="hidden rounded-2xl bg-sand px-5 py-4 text-[15px] text-clay md:block">
+          <p className="font-display font-medium">วันนัดหมาย</p>
+          <p className="mt-1">มาถึงก่อนเวลานัด 10–15 นาที แจ้งรหัสจองที่เคาน์เตอร์แพทย์แผนไทย ถ้ามาสายเกิน 10 นาทีคิวจะถูกยกเลิก</p>
+        </div>
         {t.can_confirm && (
           <Button size="lg" icon={CircleCheck} className="w-full" loading={busy === 'confirm'} onClick={doConfirm}>ยืนยันว่ามาตามนัด</Button>
         )}
@@ -172,6 +186,7 @@ export function TicketPage() {
         <Link to="/my" className="flex h-12 items-center justify-center gap-2 text-[15px] text-muted hover:text-herb">
           <ListOrdered className="size-[18px]" aria-hidden />ดูการจองทั้งหมด
         </Link>
+      </div>
       </div>
     </div>
   );

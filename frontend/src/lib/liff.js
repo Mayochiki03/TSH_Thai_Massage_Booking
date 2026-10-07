@@ -1,38 +1,52 @@
-import liff from '@line/liff';
 import { request, ApiError } from './api.js';
 import { thaiDate } from './format.js';
 
 /**
- * การยืนยันตัวตนฝั่งผู้จอง
- *  - โหมด LOCAL: ใช้ผู้ใช้จำลอง (เลือกได้จากแถบทดสอบด้านบน)
- *  - โหมดอื่น:   LIFF → ส่ง ID token ให้ backend ตรวจกับ LINE
+ * lib/liff.js — การยืนยันตัวตนฝั่งผู้จอง + การส่งตั๋วเข้าแชท LINE
+ *
+ * โหมดการเชื่อมต่อ (ตั้งที่เมนูนักพัฒนา):
+ *  - LOCAL      : ยังไม่ต่อ LINE จริง หน้าผู้จองใช้ได้เฉพาะเมื่อนักพัฒนาเลือก "ผู้ใช้จำลอง"
+ *                 จากเมนูนักพัฒนา (เก็บไว้ใน localStorage ของ browser เครื่องนั้นเท่านั้น)
+ *  - DEV_TUNNEL / PRODUCTION : ใช้ LIFF ล็อกอิน LINE จริง แล้วส่ง ID token ให้ backend ตรวจ
  */
-export const DEV_USERS = [
-  { id: 'Udev00000000000000000000000000001', name: 'Somsri (มีแม่ในรายชื่อ)' },
-  { id: 'Udev00000000000000000000000000002', name: 'Wichai (บุคคลทั่วไป)' },
-  { id: 'Udev00000000000000000000000000003', name: 'Prasert (เคยไม่มาตามนัด)' },
-  { id: 'Udev00000000000000000000000000004', name: 'ผู้ใช้ใหม่ (ยังไม่ลงทะเบียน)' },
-];
-const DEV_KEY = 'tmb_dev_user';
 
-const state = { mode: 'LOCAL', config: null, devUser: DEV_USERS[0].id };
+/** key ใน localStorage ที่เมนูนักพัฒนาใช้เก็บผู้ใช้จำลองที่เลือกไว้ */
+const MOCK_KEY = 'tmb_mock_user';
 
-export function getDevUser() { return state.devUser; }
-export function setDevUser(id) {
-  state.devUser = id;
-  try { localStorage.setItem(DEV_KEY, id); } catch { /* private mode */ }
+const state = { mode: 'LOCAL', config: null, mock: null };
+
+/** LIFF SDK โหลดเฉพาะตอนใช้ LINE จริง (โหมด LOCAL ไม่ต้องโหลด → หน้าเว็บเบาลง) */
+let liff = null;
+
+/** ผู้ใช้จำลองที่เลือกไว้ { id, name } หรือ null */
+export function getMockUser() {
+  try { return JSON.parse(localStorage.getItem(MOCK_KEY)); } catch { return null; }
+}
+/** เลือกผู้ใช้จำลอง (เรียกจากเมนูนักพัฒนา) */
+export function setMockUser(user) {
+  try { localStorage.setItem(MOCK_KEY, JSON.stringify(user)); } catch { /* private mode */ }
+}
+/** หยุดจำลอง */
+export function clearMockUser() {
+  try { localStorage.removeItem(MOCK_KEY); } catch { /* ignore */ }
 }
 
+/**
+ * เริ่มต้นหน้าผู้จอง: โหลด config แล้ว
+ *  - LOCAL + ยังไม่เลือกผู้ใช้จำลอง → คืน { ...config, needsMock: true } ให้หน้าเว็บแสดงหน้าแจ้ง
+ *  - โหมด LINE → init LIFF และ redirect ไปล็อกอิน LINE ถ้ายังไม่ล็อกอิน
+ */
 export async function initPatientAuth() {
   const config = await request('/api/public/config');
   state.config = config;
   state.mode = config.mode;
 
   if (config.mode === 'LOCAL') {
-    try { state.devUser = localStorage.getItem(DEV_KEY) || DEV_USERS[0].id; } catch { /* ignore */ }
-    return config;
+    state.mock = getMockUser();
+    return { ...config, needsMock: !state.mock };
   }
   if (!config.liff_id) throw new Error('ยังไม่ได้ตั้งค่า LIFF ID ในเมนูการเชื่อมต่อระบบ');
+  liff = (await import('@line/liff')).default;
   await liff.init({ liffId: config.liff_id });
   if (!liff.isLoggedIn()) {
     liff.login({ redirectUri: window.location.href });
@@ -41,15 +55,18 @@ export async function initPatientAuth() {
   return config;
 }
 
+/** header ยืนยันตัวตนที่แนบไปทุก request ของผู้จอง */
 function authHeaders() {
   if (state.mode === 'LOCAL') {
-    const u = DEV_USERS.find((x) => x.id === state.devUser);
-    return { 'X-Dev-Line-User': state.devUser, 'X-Dev-Line-Name': encodeURIComponent(u?.name.split(' ')[0] ?? 'ผู้ใช้ทดสอบ') };
+    if (!state.mock) return {};
+    // backend รับ header นี้เฉพาะตอนโหมด LOCAL เท่านั้น
+    return { 'X-Dev-Line-User': state.mock.id, 'X-Dev-Line-Name': encodeURIComponent(state.mock.name ?? '') };
   }
   const token = liff.getIDToken();
   return token ? { Authorization: `Bearer ${token}` } : {};
 }
 
+/** เรียก API ฝั่งผู้จอง (/api/public/*) พร้อมแนบการยืนยันตัวตน */
 export async function patientApi(path, opts = {}) {
   try {
     return await request(`/api/public${path}`, { ...opts, headers: { ...authHeaders(), ...(opts.headers ?? {}) } });
@@ -63,10 +80,14 @@ export async function patientApi(path, opts = {}) {
   }
 }
 
+/** true = โหมด LOCAL (ไม่ได้ต่อ LINE จริง) */
 export const isLocalMode = () => state.mode === 'LOCAL';
 
+/** true = เปิดอยู่ในแอป LINE (ไม่ใช่ browser ทั่วไป) */
+export const inLineApp = () => state.mode !== 'LOCAL' && !!liff?.isInClient();
+
 export function closeOrBack(navigate) {
-  if (state.mode !== 'LOCAL' && liff.isInClient()) liff.closeWindow();
+  if (inLineApp()) liff.closeWindow();
   else navigate('/');
 }
 

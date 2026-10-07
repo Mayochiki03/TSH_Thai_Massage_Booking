@@ -1,3 +1,6 @@
+/**
+ * services/patients.js — หา/สร้างผู้รับบริการจากข้อมูลที่กรอก โดยไม่สร้างซ้ำ และกันการอ้าง HN ของคนอื่น
+ */
 import { conflict } from '../utils/errors.js';
 
 /**

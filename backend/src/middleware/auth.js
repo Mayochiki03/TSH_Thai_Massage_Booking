@@ -1,3 +1,8 @@
+/**
+ * middleware/auth.js — ยืนยันตัวตนและตรวจสิทธิ์
+ *   บัญชีในระบบ (เจ้าหน้าที่/หมอนวด/แอดมิน/นักพัฒนา/kiosk): JWT ใน httpOnly cookie → requireStaff, requireRole
+ *   ผู้จอง (LINE): ID token จาก LIFF ตรวจกับ LINE ทุก request → requireLineUser, requireConsent
+ */
 import jwt from 'jsonwebtoken';
 import { config } from '../config.js';
 import { query, queryOne } from '../db.js';
@@ -8,15 +13,23 @@ import { lineConfig, verifyIdToken } from '../services/line.js';
 // เจ้าหน้าที่ / หมอนวด / แอดมิน — JWT ใน httpOnly cookie
 // =====================================================================
 export const STAFF_COOKIE = 'tmb_staff';
-const SESSION_HOURS = 12;
 
+/**
+ * อายุ session ตาม role (ชั่วโมง)
+ * - KIOSK ล็อกอินครั้งเดียวตอนติดตั้งเครื่อง แล้วเปิดค้างไว้ → 30 วัน
+ * - คนทั่วไป 12 ชม. (1 กะทำงาน)
+ */
+const sessionHours = (role) => (role === 'KIOSK' ? 24 * 30 : 12);
+
+/** ออก JWT แล้วเก็บใน httpOnly cookie (JavaScript หน้าเว็บอ่านไม่ได้ → กัน XSS ขโมย session) */
 export function issueStaffSession(res, user) {
-  const token = jwt.sign({ uid: user.user_id, role: user.role }, config.jwtSecret, { expiresIn: `${SESSION_HOURS}h` });
+  const hours = sessionHours(user.role);
+  const token = jwt.sign({ uid: user.user_id, role: user.role }, config.jwtSecret, { expiresIn: `${hours}h` });
   res.cookie(STAFF_COOKIE, token, {
     httpOnly: true,
     sameSite: 'strict',
     secure: config.isProd && process.env.INTERNAL_HTTPS === 'true',
-    maxAge: SESSION_HOURS * 3600 * 1000,
+    maxAge: hours * 3600 * 1000,
     path: '/',
   });
 }
@@ -45,9 +58,19 @@ export async function requireStaff(req, _res, next) {
   } catch (err) { next(err); }
 }
 
-/** จำกัด role — ADMIN ผ่านได้ทุกที่ */
+/**
+ * จำกัดสิทธิ์ตาม role (ลำดับสิทธิ์: DEV ⊃ ADMIN ⊃ STAFF / PRACTITIONER / KIOSK)
+ * - DEV   ผ่านได้ทุก route
+ * - ADMIN ผ่านได้ทุก route ยกเว้น route ที่เป็นของ DEV อย่างเดียว (เมนูนักพัฒนา)
+ * - role อื่นผ่านได้เฉพาะ route ที่ระบุ role นั้น
+ *
+ * @example router.use(requireRole('STAFF'))   // เคาน์เตอร์ + ADMIN + DEV
+ * @example router.use(requireRole('DEV'))     // นักพัฒนาเท่านั้น
+ */
 export const requireRole = (...roles) => (req, _res, next) => {
-  if (req.staff.role === 'ADMIN' || roles.includes(req.staff.role)) return next();
+  const role = req.staff.role;
+  const devOnly = roles.length === 1 && roles[0] === 'DEV';
+  if (role === 'DEV' || roles.includes(role) || (role === 'ADMIN' && !devOnly)) return next();
   next(forbidden());
 };
 

@@ -1,3 +1,6 @@
+/**
+ * utils/format.js — จัดรูปแบบวันที่/เวลาภาษาไทย และแทนตัวแปรในข้อความแจ้งเตือน
+ */
 const dateFmt = new Intl.DateTimeFormat('th-TH', {
   weekday: 'short', day: 'numeric', month: 'short', year: 'numeric', timeZone: 'Asia/Bangkok',
 });

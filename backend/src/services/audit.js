@@ -1,3 +1,6 @@
+/**
+ * services/audit.js — บันทึกประวัติการใช้งาน (ใคร ทำอะไร กับข้อมูลไหน จาก IP ไหน) ลงตาราง audit_logs
+ */
 import { query } from '../db.js';
 
 /** บันทึก audit log (ไม่ throw — log พังต้องไม่ทำให้งานหลักพัง) */

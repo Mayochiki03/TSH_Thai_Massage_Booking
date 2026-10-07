@@ -1,3 +1,10 @@
+/**
+ * routes/admin.js — API ผู้ดูแลระบบ (/api/admin/*, role ADMIN และ DEV)
+ *   dashboard · settings (ยกเว้นหมวดการเชื่อมต่อ) · slot-templates · slots (ปิด/เปิดรับ)
+ *   holidays · practitioners · users · patients · line-users · appointments · suspensions
+ *   notification-templates · notification-logs · audit-logs
+ * ทุกการแก้ไขบันทึก audit log
+ */
 import { Router } from 'express';
 import bcrypt from 'bcryptjs';
 import { z } from 'zod';
@@ -7,7 +14,6 @@ import { requireRole } from '../middleware/auth.js';
 import { listSettingsForAdmin, updateSetting, getSetting } from '../services/settings.js';
 import { affectedAppointments, closeSlotsAndCancel } from '../services/booking.js';
 import { notifyAppointment } from '../services/notify.js';
-import { lineConfig, getBotInfo, getQuota, pushMessages } from '../services/line.js';
 import { generateSlots } from '../jobs/cron.js';
 import { audit } from '../services/audit.js';
 import { patientInput, idParam, dateStr, timeStr } from './schemas.js';
@@ -22,10 +28,45 @@ const page = (req) => {
 };
 
 // =====================================================================
-// แดชบอร์ดสรุป
+// Dashboard
 // =====================================================================
-adminRouter.get('/stats', ah(async (_req, res) => {
-  const month = await queryOne(
+/**
+ * ข้อมูลหน้า Dashboard ของผู้ดูแล
+ *  - today      : สรุปคิววันนี้ตามสถานะ + จำนวนรอบว่าง
+ *  - next_days  : 7 วันข้างหน้า จำนวนรอบทั้งหมด / ถูกจอง (ดูว่าคิวแน่นแค่ไหน)
+ *  - last30     : 30 วันที่ผ่านมา อัตรามาตามนัด / ไม่มา / ยกเลิก + เวลานวดเฉลี่ย
+ *  - channels   : 30 วัน แยกตามช่องทางการจอง (LINE / kiosk / เคาน์เตอร์)
+ *  - suspended_patients : จำนวนคนที่ถูกระงับสิทธิ์อยู่ตอนนี้
+ */
+adminRouter.get('/dashboard', ah(async (_req, res) => {
+  const toNum = (o) => Object.fromEntries(Object.entries(o).map(([k, v]) => [k, v == null ? null : Number(v)]));
+
+  const today = await queryOne(
+    `SELECT COUNT(s.slot_id) AS slots,
+            SUM(a.status = 'BOOKED')     AS booked,
+            SUM(a.status = 'CHECKED_IN') AS checked_in,
+            SUM(a.status = 'IN_SERVICE') AS in_service,
+            SUM(a.status = 'COMPLETED')  AS completed,
+            SUM(a.appointment_id IS NULL AND s.is_blocked = FALSE) AS available
+       FROM time_slots s LEFT JOIN appointments a ON a.active_slot_id = s.slot_id
+      WHERE s.slot_date = CURDATE()`,
+  );
+  const todayInactive = await queryOne(
+    `SELECT SUM(a.status = 'NO_SHOW') AS no_show, SUM(a.status = 'CANCELLED') AS cancelled
+       FROM appointments a JOIN time_slots s ON s.slot_id = a.slot_id WHERE s.slot_date = CURDATE()`,
+  );
+  const nextDays = await query(
+    `SELECT s.slot_date AS date, COUNT(*) AS slots,
+            SUM(a.appointment_id IS NOT NULL) AS booked,
+            SUM(s.is_blocked) AS blocked,
+            MAX(h.name) AS holiday
+       FROM time_slots s
+       LEFT JOIN appointments a ON a.active_slot_id = s.slot_id
+       LEFT JOIN holidays h ON h.holiday_date = s.slot_date
+      WHERE s.slot_date BETWEEN CURDATE() AND CURDATE() + INTERVAL 6 DAY
+      GROUP BY s.slot_date ORDER BY s.slot_date`,
+  );
+  const last30 = await queryOne(
     `SELECT COUNT(*) AS total,
             SUM(a.status = 'COMPLETED') AS completed,
             SUM(a.status = 'NO_SHOW')   AS no_show,
@@ -33,29 +74,48 @@ adminRouter.get('/stats', ah(async (_req, res) => {
             ROUND(AVG(TIMESTAMPDIFF(MINUTE, sr.service_start, sr.service_end)), 0) AS avg_service_min
        FROM appointments a JOIN time_slots s ON s.slot_id = a.slot_id
        LEFT JOIN service_records sr ON sr.appointment_id = a.appointment_id
-      WHERE s.slot_date BETWEEN DATE_FORMAT(CURDATE(), '%Y-%m-01') AND LAST_DAY(CURDATE())`,
+      WHERE s.slot_date BETWEEN CURDATE() - INTERVAL 30 DAY AND CURDATE() - INTERVAL 1 DAY`,
+  );
+  const channels = await query(
+    `SELECT a.booking_channel AS channel, COUNT(*) AS n
+       FROM appointments a JOIN time_slots s ON s.slot_id = a.slot_id
+      WHERE s.slot_date BETWEEN CURDATE() - INTERVAL 30 DAY AND CURDATE() + INTERVAL 7 DAY
+      GROUP BY a.booking_channel`,
   );
   const suspended = await queryOne(
     `SELECT COUNT(DISTINCT patient_id) AS n FROM patient_suspensions
       WHERE lifted_at IS NULL AND CURDATE() BETWEEN start_date AND end_date`,
   );
-  const num = Object.fromEntries(Object.entries(month).map(([k, v]) => [k, v == null ? null : Number(v)]));
-  res.json({ month: num, suspended_patients: Number(suspended.n) });
+  res.json({
+    today: { ...toNum(today), ...toNum(todayInactive) },
+    next_days: nextDays.map(toNum).map((d, i) => ({ ...d, date: nextDays[i].date, holiday: nextDays[i].holiday })),
+    last30: toNum(last30),
+    channels: channels.map((c) => ({ channel: c.channel, n: Number(c.n) })),
+    suspended_patients: Number(suspended.n),
+  });
 }));
 
 // =====================================================================
-// ตั้งค่าระบบ
+// ตั้งค่าระบบ (กฎการจอง / ระงับสิทธิ์ / ทั่วไป)
+// หมวด CONNECTION (LINE, โหมด) อยู่ที่เมนูนักพัฒนา /api/dev/connection เท่านั้น
 // =====================================================================
-adminRouter.get('/settings', ah(async (_req, res) => res.json({ settings: await listSettingsForAdmin() })));
+adminRouter.get('/settings', ah(async (_req, res) => {
+  const all = await listSettingsForAdmin();
+  res.json({ settings: all.filter((s) => s.category !== 'CONNECTION') });
+}));
 
 adminRouter.put('/settings', ah(async (req, res) => {
   const body = z.record(z.string(), z.any()).parse(req.body);
+  const current = await listSettingsForAdmin();
   for (const [key, value] of Object.entries(body)) {
-    if (value === '••••••••') continue; // ช่อง SECRET ที่ไม่ได้แก้
+    const row = current.find((s) => s.key === key);
+    if (!row) throw badRequest('UNKNOWN_SETTING', `ไม่รู้จักค่าตั้งค่า ${key}`);
+    if (row.category === 'CONNECTION') throw badRequest('DEV_ONLY', 'ค่าการเชื่อมต่อแก้ได้ที่เมนูนักพัฒนา');
     await updateSetting(key, value);
   }
   await audit(req, 'UPDATE', 'settings', null, { keys: Object.keys(body) });
-  res.json({ settings: await listSettingsForAdmin() });
+  const all = await listSettingsForAdmin();
+  res.json({ settings: all.filter((s) => s.category !== 'CONNECTION') });
 }));
 
 // =====================================================================
@@ -276,10 +336,22 @@ adminRouter.delete('/practitioners/:id', ah(async (req, res) => {
 const userBody = z.object({
   username: z.string().trim().min(3).max(50).regex(/^[a-zA-Z0-9._-]+$/, 'ใช้ได้เฉพาะ a-z 0-9 . _ -'),
   full_name: z.string().trim().min(1).max(200),
-  role: z.enum(['ADMIN', 'STAFF', 'PRACTITIONER']),
+  role: z.enum(['DEV', 'ADMIN', 'STAFF', 'PRACTITIONER', 'KIOSK']),
   practitioner_id: z.coerce.number().int().positive().optional().nullable(),
   is_active: z.boolean().default(true),
 }).refine((b) => b.role !== 'PRACTITIONER' || b.practitioner_id, { message: 'บัญชีหมอนวดต้องเลือกหมอนวด', path: ['practitioner_id'] });
+
+/**
+ * ADMIN จัดการบัญชี DEV ไม่ได้ (สร้าง / แก้ / ตั้ง role เป็น DEV / รีเซ็ตรหัส) — เฉพาะ DEV ด้วยกันเท่านั้น
+ * @param {import('express').Request} req
+ * @param {string|null} newRole  role ที่จะตั้ง (null = ไม่เปลี่ยน role เช่นรีเซ็ตรหัส)
+ * @param {number|null} targetId บัญชีเป้าหมาย (null = สร้างใหม่)
+ */
+async function guardDevAccounts(req, newRole, targetId) {
+  if (req.staff.role === 'DEV') return;
+  const target = targetId ? await queryOne('SELECT role FROM staff_users WHERE user_id = ?', [targetId]) : null;
+  if (newRole === 'DEV' || target?.role === 'DEV') throw badRequest('DEV_ONLY', 'บัญชีนักพัฒนาจัดการได้โดยนักพัฒนาเท่านั้น');
+}
 
 adminRouter.get('/users', ah(async (_req, res) => {
   res.json({
@@ -293,6 +365,7 @@ adminRouter.get('/users', ah(async (_req, res) => {
 adminRouter.post('/users', ah(async (req, res) => {
   const b = userBody.parse(req.body);
   const password = z.string().min(8, 'รหัสผ่านอย่างน้อย 8 ตัวอักษร').parse(req.body.password);
+  await guardDevAccounts(req, b.role, null);
   const r = await query(
     `INSERT INTO staff_users (username, password_hash, full_name, role, practitioner_id, is_active, must_change_password)
      VALUES (?, ?, ?, ?, ?, ?, TRUE)`,
@@ -305,8 +378,10 @@ adminRouter.post('/users', ah(async (req, res) => {
 adminRouter.put('/users/:id', ah(async (req, res) => {
   const id = idParam.parse(req.params.id);
   const b = userBody.parse(req.body);
-  if (id === req.staff.user_id && (!b.is_active || b.role !== 'ADMIN')) {
-    throw badRequest('SELF_LOCKOUT', 'ปิดใช้งานหรือลดสิทธิ์บัญชีตัวเองไม่ได้');
+  await guardDevAccounts(req, b.role, id);
+  // กันล็อกตัวเองออกจากระบบ: ห้ามปิดบัญชีตัวเอง / ห้ามเปลี่ยน role ตัวเอง
+  if (id === req.staff.user_id && (!b.is_active || b.role !== req.staff.role)) {
+    throw badRequest('SELF_LOCKOUT', 'ปิดใช้งานหรือเปลี่ยนสิทธิ์บัญชีตัวเองไม่ได้');
   }
   await query(
     'UPDATE staff_users SET username = ?, full_name = ?, role = ?, practitioner_id = ?, is_active = ? WHERE user_id = ?',
@@ -319,6 +394,7 @@ adminRouter.put('/users/:id', ah(async (req, res) => {
 adminRouter.post('/users/:id/reset-password', ah(async (req, res) => {
   const id = idParam.parse(req.params.id);
   const password = z.string().min(8, 'รหัสผ่านอย่างน้อย 8 ตัวอักษร').parse(req.body?.password);
+  await guardDevAccounts(req, null, id);
   await query('UPDATE staff_users SET password_hash = ?, must_change_password = TRUE WHERE user_id = ?', [await bcrypt.hash(password, 10), id]);
   await audit(req, 'RESET_PASSWORD', 'staff_users', id);
   res.json({ ok: true });
@@ -547,61 +623,6 @@ adminRouter.get('/notification-logs', ah(async (req, res) => {
        FROM notification_logs WHERE sent_at >= DATE_FORMAT(CURDATE(), '%Y-%m-01')`,
   );
   res.json({ logs: rows, month: Object.fromEntries(Object.entries(month).map(([k, v]) => [k, Number(v ?? 0)])) });
-}));
-
-// =====================================================================
-// การเชื่อมต่อระบบ
-// =====================================================================
-adminRouter.get('/connection', ah(async (_req, res) => {
-  const c = await lineConfig();
-  res.json({
-    mode: c.mode,
-    public_base_url: c.publicBaseUrl,
-    liff_id: c.liffId,
-    line_login_channel_id: c.loginChannelId,
-    channel_secret_set: !!c.channelSecret,
-    channel_token_set: !!c.channelToken,
-  });
-}));
-
-adminRouter.post('/connection/test', ah(async (req, res) => {
-  const what = z.enum(['public', 'token', 'quota', 'push']).parse(req.body?.what);
-  const c = await lineConfig();
-
-  if (what === 'public') {
-    if (!c.publicBaseUrl) return res.json({ ok: false, error: 'ยังไม่ได้ตั้งค่า Public URL' });
-    try {
-      const r = await fetch(`${c.publicBaseUrl}/health`, { signal: AbortSignal.timeout(8000) });
-      const data = await r.json().catch(() => null);
-      return res.json({ ok: r.ok && data?.ok === true, status: r.status, data });
-    } catch (err) {
-      return res.json({ ok: false, error: `เปิดไม่ได้: ${err.message}` });
-    }
-  }
-  if (what === 'token') return res.json(await getBotInfo());
-  if (what === 'quota') return res.json(await getQuota());
-
-  // push: ส่งข้อความทดสอบไปที่ LINE ของแอดมิน (ต้องระบุ line_user_id)
-  const to = z.string().regex(/^U[0-9a-f]{32}$/i, 'LINE user ID ไม่ถูกต้อง').parse(req.body?.line_user_id);
-  const r = await pushMessages(to, [{ type: 'text', text: 'ทดสอบการเชื่อมต่อจากระบบจองคิวนวดแผนไทย ✓' }]);
-  res.json(r.ok ? { ok: true } : { ok: false, error: r.data?.message || `HTTP ${r.status}` });
-}));
-
-/** ล้างข้อมูลทดสอบ (ก่อนเปลี่ยนไปใช้ OA จริง) — เก็บค่าตั้งค่า / ผู้ใช้ระบบ / slot / วันหยุดไว้ */
-adminRouter.post('/connection/clear-test-data', ah(async (req, res) => {
-  if (req.body?.confirm_text !== 'ล้างข้อมูล') throw badRequest('CONFIRM', 'พิมพ์คำว่า "ล้างข้อมูล" เพื่อยืนยัน');
-  const counts = await withTx(async (conn) => {
-    const out = {};
-    for (const t of ['notification_logs', 'service_records', 'appointments', 'patient_suspensions', 'booker_patients']) {
-      const [r] = await conn.query(`DELETE FROM ${t}`);
-      out[t] = r.affectedRows;
-    }
-    const [lu] = await conn.query('DELETE FROM line_users'); out.line_users = lu.affectedRows;
-    const [p] = await conn.query('DELETE FROM patients'); out.patients = p.affectedRows;
-    return out;
-  });
-  await audit(req, 'CLEAR_TEST_DATA', 'system', null, counts);
-  res.json({ ok: true, deleted: counts });
 }));
 
 // =====================================================================

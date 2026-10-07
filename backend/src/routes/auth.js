@@ -1,3 +1,8 @@
+/**
+ * routes/auth.js — เข้าสู่ระบบ / ออกจากระบบ / เปลี่ยนรหัสผ่าน (/api/auth/*)
+ *   - ล็อกอินผิดเกิน 10 ครั้งใน 15 นาทีต่อ IP → ถูกพักชั่วคราว
+ *   - ตอบข้อความเดียวกันทั้ง "ไม่มีผู้ใช้" และ "รหัสผิด" (เดาชื่อผู้ใช้ไม่ได้)
+ */
 import { Router } from 'express';
 import bcrypt from 'bcryptjs';
 import rateLimit from 'express-rate-limit';
@@ -12,9 +17,10 @@ export const authRouter = Router();
 // hash หลอกสำหรับกรณีไม่พบ username (ให้ใช้เวลาเท่ากับกรณีพบ)
 const DUMMY_HASH = bcrypt.hashSync(`dummy-${Math.random()}`, 10);
 
-// กันเดารหัสผ่าน: 10 ครั้ง / 15 นาที / IP
+// กันเดารหัสผ่าน: ล็อกอินผิดได้ 10 ครั้ง / 15 นาที / IP (ล็อกอินสำเร็จไม่นับ)
 const loginLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, limit: 10, standardHeaders: true, legacyHeaders: false,
+  skipSuccessfulRequests: true,
   message: { error: { code: 'TOO_MANY_ATTEMPTS', message: 'พยายามเข้าสู่ระบบบ่อยเกินไป กรุณารอ 15 นาที' } },
 });
 

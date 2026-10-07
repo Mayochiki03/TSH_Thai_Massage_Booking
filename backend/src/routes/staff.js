@@ -1,3 +1,8 @@
+/**
+ * routes/staff.js — API หน้างาน
+ *   staffRouter        (/api/staff/*, STAFF)        คิวรายวัน · ค้นหา · เช็กอิน · walk-in / จองแทน · ยกเลิก · no-show
+ *   practitionerRouter (/api/practitioner/*, หมอนวด) คิวของตัวเอง · เริ่ม/จบบริการ · บันทึกผล · ประวัติผู้รับบริการ
+ */
 import { Router } from 'express';
 import { z } from 'zod';
 import { query, queryOne, withTx } from '../db.js';

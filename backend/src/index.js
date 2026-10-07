@@ -1,3 +1,12 @@
+/**
+ * index.js — จุดเริ่มต้นของ backend
+ *
+ * เปิด 2 เซิร์ฟเวอร์แยกกัน:
+ *   PUBLIC   (127.0.0.1:4000) — หน้าจอง + /api/public  → ส่งออกอินเทอร์เน็ตผ่าน Cloudflare Tunnel
+ *   INTERNAL (0.0.0.0:4001)   — /api/auth /staff /practitioner /admin /dev /kiosk → ใช้ใน LAN เท่านั้น
+ * API ของเจ้าหน้าที่/แอดมินจึงไม่มีอยู่บนพอร์ตที่ออกอินเทอร์เน็ตเลย
+ * แล้วเริ่มงานตั้งเวลา (cron) ถ้า ENABLE_CRON=true
+ */
 import express from 'express';
 import helmet from 'helmet';
 import cookieParser from 'cookie-parser';
@@ -10,6 +19,8 @@ import { publicRouter } from './routes/public.js';
 import { authRouter } from './routes/auth.js';
 import { staffRouter, practitionerRouter } from './routes/staff.js';
 import { adminRouter } from './routes/admin.js';
+import { devRouter } from './routes/dev.js';
+import { kioskRouter } from './routes/kiosk.js';
 import { startCron } from './jobs/cron.js';
 
 function baseApp() {
@@ -48,6 +59,8 @@ internalApp.use('/api/auth', authRouter);
 internalApp.use('/api/staff', requireStaff, requirePasswordChanged, staffRouter);
 internalApp.use('/api/practitioner', requireStaff, requirePasswordChanged, practitionerRouter);
 internalApp.use('/api/admin', requireStaff, requirePasswordChanged, adminRouter);
+internalApp.use('/api/dev', requireStaff, requirePasswordChanged, devRouter);
+internalApp.use('/api/kiosk', requireStaff, requirePasswordChanged, kioskRouter);
 internalApp.use('/api', (_req, res) => res.status(404).json({ error: { code: 'NOT_FOUND', message: 'ไม่พบ API' } }));
 internalApp.use(errorHandler);
 

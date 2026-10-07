@@ -1,3 +1,8 @@
+/**
+ * lib/api.js — เรียก API แบบ JSON
+ *   request()   fetch + แปลง error จาก backend เป็น ApiError (มี code / message / fields)
+ *   staffApi()  เรียก /api/* ของบัญชีในระบบ (cookie session) — ตอบ 401 → เด้งไปหน้าเข้าสู่ระบบ
+ */
 export class ApiError extends Error {
   constructor(status, body) {
     const e = body?.error ?? {};

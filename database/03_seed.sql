@@ -14,9 +14,10 @@ INSERT INTO practitioners (practitioner_id, full_name, license_no)
 VALUES (1, 'หมอนวดแผนไทย (แก้ชื่อในหน้าแอดมิน)', NULL);
 
 -- admin / admin1234  → ระบบบังคับเปลี่ยนรหัสผ่านตอนล็อกอินครั้งแรก
-INSERT INTO staff_users (username, password_hash, full_name, role, must_change_password)
-VALUES ('admin', '$2b$10$xMyz7DWrIDeu5usbw56VTexzNxP3gTpImGD6nsmOLjKYHMkA7KbKG',
-        'ผู้ดูแลระบบ', 'ADMIN', TRUE);
+-- dev   / admin1234  → นักพัฒนา (เห็นเมนูนักพัฒนา)
+INSERT INTO staff_users (username, password_hash, full_name, role, must_change_password) VALUES
+  ('admin', '$2b$10$xMyz7DWrIDeu5usbw56VTexzNxP3gTpImGD6nsmOLjKYHMkA7KbKG', 'ผู้ดูแลระบบ', 'ADMIN', TRUE),
+  ('dev',   '$2b$10$xMyz7DWrIDeu5usbw56VTexzNxP3gTpImGD6nsmOLjKYHMkA7KbKG', 'นักพัฒนาระบบ', 'DEV',   TRUE);
 
 -- ---------------------------------------------------------------------
 -- แม่แบบรอบเวลา (ค่าตั้งต้นจากเอกสาร — แก้ได้ในหน้าแอดมิน)
@@ -65,6 +66,7 @@ INSERT INTO settings (setting_key, setting_value, label, category, value_type, s
   ('clinic_name',          'คลินิกแพทย์แผนไทย', 'ชื่อคลินิก (แสดงบนหน้าจอ/ตั๋ว)',             'GENERAL', 'STRING', 1),
   ('counter_phone',        '',          'เบอร์โทรเคาน์เตอร์ (แสดงในหน้าตั๋ว)',                  'GENERAL', 'STRING', 2),
   ('remind_1d_hour',       '17',        'เวลาส่งเตือนล่วงหน้า 1 วัน (ชั่วโมง 0–23)',             'GENERAL', 'INT',    3),
+  ('kiosk_idle_sec',       '60',        'kiosk กลับหน้าแรกเองเมื่อไม่มีคนใช้ (วินาที)',          'GENERAL', 'INT',    4),
   -- การเชื่อมต่อ (กรอกในเมนู "การเชื่อมต่อระบบ")
   ('connection_mode',      'LOCAL',     'โหมดการเชื่อมต่อ (LOCAL / DEV_TUNNEL / PRODUCTION)',   'CONNECTION', 'STRING', 1),
   ('public_base_url',      '',          'Public URL (https://...)',                            'CONNECTION', 'STRING', 2),

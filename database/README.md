@@ -12,6 +12,7 @@ MySQL 8.0+ · utf8mb4 · ทดสอบกับ MySQL 8.0.46 แล้ว
 | `03_seed.sql` | ค่าตั้งต้น: แอดมิน, หมอนวด, รอบเวลา, วันหยุด, settings, ข้อความแจ้งเตือน + สร้าง slot 14 วัน | dev / prod |
 | `04_dev_sample.sql` | ข้อมูลตัวอย่าง: ผู้รับบริการ 5 คน, LINE จำลอง 3 บัญชี, คิวครบทุกสถานะ | **dev เท่านั้น** |
 | `setup_dev.sql` | ล้าง DB แล้วรัน 00 → 04 ทั้งหมด | **dev เท่านั้น** |
+| `migrations/001_roles_kiosk.sql` | อัปเกรด DB เดิม (v0.2) → v0.3 โดยไม่ล้างข้อมูล: role DEV/KIOSK, ช่องทาง KIOSK, บัญชี dev | DB ที่มีข้อมูลแล้ว |
 
 ## ติดตั้ง (Windows)
 
@@ -34,13 +35,15 @@ mysql -u root -p -e "source setup_dev.sql"
 
 | username | password | role |
 |---|---|---|
+| `dev` | `admin1234` | DEV (นักพัฒนา) |
 | `admin` | `admin1234` | ADMIN |
 | `counter1` | `admin1234` | STAFF (dev) |
 | `therapist1` | `admin1234` | PRACTITIONER (dev) |
+| `kiosk1` | `admin1234` | KIOSK (dev) |
 
 DB user ของแอป: `massage_app` / `ChangeMe_Dev_2026!` (มีสิทธิ์แค่ SELECT/INSERT/UPDATE/DELETE/EXECUTE ลบตารางไม่ได้)
 
-> ⚠ ก่อนขึ้น production: เปลี่ยนรหัส `massage_app` ใน `00_create_database.sql` และไม่รัน `04_dev_sample.sql` บน production (ผู้ใช้ `admin` ใน `03_seed.sql` จะถูกบังคับเปลี่ยนรหัสผ่านตอนล็อกอินครั้งแรก)
+> ⚠ ก่อนขึ้น production: เปลี่ยนรหัส `massage_app` ใน `00_create_database.sql` และไม่รัน `04_dev_sample.sql` บน production (บัญชี `admin` และ `dev` ใน `03_seed.sql` ถูกบังคับเปลี่ยนรหัสผ่านตอนล็อกอินครั้งแรก)
 
 ## จุดสำคัญของ schema
 

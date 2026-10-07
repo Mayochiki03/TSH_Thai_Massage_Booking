@@ -1,3 +1,7 @@
+/**
+ * pages/patient/MyBookingsPage.jsx — รายการการจองของผู้จองคนนี้ (รวมที่จองให้คนอื่น)
+ * แท็บ "กำลังจะถึง" / "ที่ผ่านมา" · มือถือ 1 คอลัมน์, จอกว้าง 2 คอลัมน์
+ */
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router';
 import { CalendarHeart, ChevronRight } from 'lucide-react';
@@ -28,9 +32,9 @@ export function MyBookingsPage() {
   );
 
   return (
-    <div className="px-5 pt-4 pb-10">
-      <h1 className="text-[26px] font-semibold">การจองของฉัน</h1>
-      <div className="mt-4 flex gap-1 rounded-full bg-mist p-1" role="tablist">
+    <div className="pt-6 pb-10 lg:pt-10">
+      <h1 className="text-[28px] font-semibold">การจองของฉัน</h1>
+      <div className="mt-4 flex max-w-md gap-1 rounded-full bg-sand p-1" role="tablist">
         {tab('upcoming', 'กำลังจะถึง')}
         {tab('past', 'ที่ผ่านมา')}
       </div>
@@ -42,12 +46,12 @@ export function MyBookingsPage() {
           action={scope === 'upcoming' && <Link to="/"><Button>จองคิวนวด</Button></Link>}
         />
       ) : (
-        <ul className="mt-5 space-y-3">
+        <ul className="mt-6 grid gap-3 md:grid-cols-2">
           {list.map((b) => {
             const off = ['CANCELLED', 'NO_SHOW'].includes(b.status);
             return (
               <li key={b.booking_code}>
-                <Link to={`/ticket/${b.booking_code}`} className="flex items-stretch overflow-hidden rounded-2xl border border-line hover:border-herb">
+                <Link to={`/ticket/${b.booking_code}`} className="flex h-full items-stretch overflow-hidden rounded-2xl border border-line bg-paper hover:border-herb">
                   <div className={cx('flex w-[76px] shrink-0 flex-col items-center justify-center py-3', off ? 'bg-mist text-faint' : 'bg-leaf-soft text-herb')}>
                     <span className="text-[13px]">{relativeDay(b.slot_date) ?? weekdayShort(b.slot_date)}</span>
                     <span className="font-display text-[28px] font-semibold leading-none">{dayNum(b.slot_date)}</span>

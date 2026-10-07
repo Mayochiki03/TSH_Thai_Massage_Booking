@@ -1,3 +1,8 @@
+/**
+ * pages/patient/Onboarding.jsx — ครั้งแรกที่ผู้จองเปิดระบบ
+ *  1) Consent  : ยินยอมให้เก็บข้อมูล (PDPA) — ต้องยอมรับก่อนใช้งาน
+ *  2) SelfInfo : กรอกข้อมูลตัวเอง (ใช้กับปุ่ม "จองให้ตัวเอง")
+ */
 import { useState } from 'react';
 import { ShieldCheck } from 'lucide-react';
 import { patientApi } from '../../lib/liff.js';
@@ -23,11 +28,11 @@ function Consent() {
   };
 
   return (
-    <div className="anim-rise px-5 pt-6 pb-10">
+    <div className="anim-rise mx-auto max-w-xl pt-6 pb-10 lg:pt-12">
       <h1 className="text-[26px] font-semibold">ก่อนเริ่มจองคิว</h1>
       <p className="mt-2 text-muted">ระบบจะเก็บข้อมูลเท่าที่จำเป็นสำหรับการนัดหมายเท่านั้น</p>
 
-      <div className="mt-6 rounded-2xl bg-mist p-5">
+      <div className="mt-6 rounded-2xl bg-sand p-5">
         <div className="mb-3 flex items-center gap-2 font-display font-medium text-herb">
           <ShieldCheck className="size-5" aria-hidden />
           ข้อมูลที่เราเก็บ
@@ -40,7 +45,7 @@ function Consent() {
         <p className="mt-4 text-[15px] text-muted">ข้อมูลใช้ภายในโรงพยาบาลเท่านั้น ไม่เปิดเผยต่อบุคคลภายนอก ขอลบข้อมูลได้ที่เคาน์เตอร์</p>
       </div>
 
-      <label className="mt-6 flex cursor-pointer items-start gap-3 rounded-2xl border border-line p-4 has-[:checked]:border-herb has-[:checked]:bg-leaf-soft">
+      <label className="mt-6 flex cursor-pointer items-start gap-3 rounded-2xl border border-line p-4 bg-paper has-[:checked]:border-herb has-[:checked]:bg-leaf-soft">
         <input type="checkbox" checked={agree} onChange={(e) => setAgree(e.target.checked)} className="mt-1 size-5 accent-herb" />
         <span>ฉันยินยอมให้โรงพยาบาลเก็บและใช้ข้อมูลข้างต้นเพื่อการนัดหมายและการรักษา</span>
       </label>
@@ -78,7 +83,7 @@ function SelfInfo() {
   };
 
   return (
-    <form onSubmit={submit} className="anim-rise px-5 pt-6 pb-10">
+    <form onSubmit={submit} className="anim-rise mx-auto max-w-xl pt-6 pb-10 lg:pt-12">
       <h1 className="text-[26px] font-semibold">ข้อมูลของคุณ</h1>
       <p className="mt-2 mb-6 text-muted">
         {me.display_name ? `สวัสดีคุณ ${me.display_name} ` : ''}กรอกครั้งเดียว ครั้งต่อไปกดจองได้เลย

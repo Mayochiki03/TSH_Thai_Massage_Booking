@@ -1,3 +1,7 @@
+/**
+ * pages/patient/PersonForm.jsx — ฟอร์มข้อมูลผู้รับบริการ (ชื่อ / นามสกุล / เบอร์ / HN / ความสัมพันธ์)
+ * ใช้ร่วมกัน: หน้าผู้จอง, หน้าเคาน์เตอร์ (walk-in), หน้าแอดมิน
+ */
 import { useState } from 'react';
 import { Field, Input, cx } from '../../components/ui.jsx';
 import { RELATIONS } from '../../lib/format.js';

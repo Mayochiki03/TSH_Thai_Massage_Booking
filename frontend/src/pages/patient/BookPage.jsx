@@ -1,3 +1,12 @@
+/**
+ * pages/patient/BookPage.jsx — หน้าจองคิว (หน้าแรกของผู้จอง)
+ *
+ * ขั้นตอนบนหน้าเดียว: เลือกวัน → รอบเวลา → ผู้รับบริการ → อาการ (ไม่บังคับ) → ตรวจสอบและยืนยัน
+ *
+ * Responsive:
+ *  - มือถือ/แท็บเล็ตแนวตั้ง : คอลัมน์เดียว + แถบสรุปและปุ่มจองติดขอบล่าง
+ *  - จอกว้าง (lg ≥ 1024px)   : 2 คอลัมน์ — ซ้ายเลือกข้อมูล / ขวากล่องสรุปการจองติดอยู่ขณะเลื่อน
+ */
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router';
 import { Plus, UserRound, CalendarX2, Check } from 'lucide-react';
@@ -76,16 +85,25 @@ export function BookPage() {
     );
   }
 
+  /** ข้อความสรุปวัน-เวลาที่เลือก ใช้ทั้งแถบล่าง (มือถือ) และกล่องสรุป (จอกว้าง) */
+  const pickedLabel = slot
+    ? `${relativeDay(date) ?? weekdayShort(date)} ${dayNum(date)} ${monthShort(date)}, ${slot.start_time}–${slot.end_time} น.`
+    : null;
+
   return (
-    <div className="pb-32">
-      <section className="px-5 pt-4">
-        <h1 className="text-[28px] font-semibold leading-tight">จองคิวนวด</h1>
-        <p className="mt-1 text-muted">เลือกวัน รอบเวลา และผู้รับบริการ</p>
+    <div className="pt-6 pb-36 lg:pt-10 lg:pb-12">
+      <section>
+        <h1 className="text-[28px] font-semibold leading-tight sm:text-[32px]">จองคิวนวดแผนไทย</h1>
+        <p className="mt-1 text-muted">เลือกวัน รอบเวลา และผู้รับบริการ รอบละ 1 ชั่วโมง</p>
       </section>
 
+      <div className="mt-6 grid gap-x-10 lg:grid-cols-[minmax(0,1fr)_340px] lg:items-start">
+      <div className="min-w-0">
+
       {/* วันที่ */}
-      <section className="mt-6" aria-label="เลือกวัน">
-        <div className="no-scrollbar flex gap-2.5 overflow-x-auto px-5 pb-1">
+      <section aria-label="เลือกวัน">
+        <h2 className="mb-3 text-lg font-semibold">วันที่</h2>
+        <div className="no-scrollbar -mx-4 flex gap-2.5 overflow-x-auto px-4 pb-1 sm:mx-0 sm:flex-wrap sm:overflow-visible sm:px-0">
           {days.map((d) => {
             const free = d.slots.filter((s) => s.status === 'AVAILABLE').length;
             const holiday = d.slots.every((s) => s.status === 'HOLIDAY');
@@ -97,7 +115,7 @@ export function BookPage() {
                 onClick={() => { setDate(d.date); setSlotId(null); }}
                 aria-pressed={active}
                 className={cx(
-                  'flex w-[88px] shrink-0 flex-col items-center rounded-2xl border px-2 pt-2.5 pb-3 transition-colors',
+                  'flex w-[88px] shrink-0 flex-col items-center rounded-2xl border px-2 pt-2.5 pb-3 transition-colors sm:w-[104px]',
                   active ? 'border-herb bg-herb text-white' : 'border-line bg-paper hover:border-herb',
                   !free && !active && 'opacity-60',
                 )}
@@ -116,9 +134,9 @@ export function BookPage() {
 
       {/* รอบเวลา */}
       {day && (
-        <section className="mt-7 px-5" aria-label="เลือกรอบเวลา">
+        <section className="mt-8" aria-label="เลือกรอบเวลา">
           <h2 className="mb-3 text-lg font-semibold">รอบเวลา</h2>
-          <div className="grid grid-cols-2 gap-2.5">
+          <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-3">
             {day.slots.map((s) => {
               const ok = s.status === 'AVAILABLE';
               const active = s.slot_id === slotId;
@@ -131,7 +149,7 @@ export function BookPage() {
                   aria-pressed={active}
                   className={cx(
                     'relative flex h-[72px] flex-col items-start justify-center rounded-2xl border px-4 text-left transition-colors',
-                    active ? 'border-herb bg-leaf-soft ring-2 ring-herb' : ok ? 'border-line hover:border-herb' : 'border-transparent bg-mist',
+                    active ? 'border-herb bg-leaf-soft ring-2 ring-herb' : ok ? 'border-line bg-paper hover:border-herb' : 'border-transparent bg-sand/60',
                   )}
                 >
                   <span className={cx('font-display text-[22px] font-semibold leading-none', !ok && 'text-faint line-through decoration-1')}>{s.start_time}</span>
@@ -151,9 +169,9 @@ export function BookPage() {
       )}
 
       {/* ผู้รับบริการ */}
-      <section className="mt-8 px-5" aria-label="ผู้รับบริการ">
+      <section className="mt-8" aria-label="ผู้รับบริการ">
         <h2 className="mb-3 text-lg font-semibold">จองให้ใคร</h2>
-        <div className="space-y-2">
+        <div className="grid gap-2 sm:grid-cols-2">
           {me.patients.map((p) => {
             const active = p.patient_id === patientId;
             return (
@@ -164,10 +182,10 @@ export function BookPage() {
                 aria-pressed={active}
                 className={cx(
                   'flex w-full items-center gap-3 rounded-2xl border px-4 py-3 text-left transition-colors',
-                  active ? 'border-herb bg-leaf-soft' : 'border-line hover:border-herb',
+                  active ? 'border-herb bg-leaf-soft' : 'border-line bg-paper hover:border-herb',
                 )}
               >
-                <span className={cx('grid size-10 shrink-0 place-items-center rounded-full', active ? 'bg-herb text-white' : 'bg-mist text-muted')}>
+                <span className={cx('grid size-10 shrink-0 place-items-center rounded-full', active ? 'bg-herb text-white' : 'bg-sand text-clay')}>
                   <UserRound className="size-5" aria-hidden />
                 </span>
                 <span className="min-w-0 flex-1">
@@ -190,7 +208,7 @@ export function BookPage() {
       </section>
 
       {/* อาการ */}
-      <section className="mt-8 px-5" aria-label="อาการเบื้องต้น">
+      <section className="mt-8" aria-label="อาการเบื้องต้น">
         <h2 className="text-lg font-semibold">อาการเบื้องต้น</h2>
         <p className="mb-3 text-[15px] text-muted">ไม่บังคับ แตะเพื่อเลือก หรือพิมพ์เพิ่มเอง</p>
         <div className="mb-3 flex flex-wrap gap-2">
@@ -202,7 +220,7 @@ export function BookPage() {
                 type="button"
                 onClick={() => toggleComplaint(c)}
                 aria-pressed={on}
-                className={cx('h-9 rounded-full border px-3.5 text-[15px] transition-colors', on ? 'border-herb bg-leaf text-herb' : 'border-line text-ink hover:border-herb')}
+                className={cx('h-9 rounded-full border px-3.5 text-[15px] transition-colors', on ? 'border-herb bg-leaf text-herb' : 'border-line bg-paper text-ink hover:border-herb')}
               >
                 {c}
               </button>
@@ -212,13 +230,34 @@ export function BookPage() {
         <Textarea value={complaint} onChange={(e) => setComplaint(e.target.value)} placeholder="เช่น ปวดไหล่ขวามา 3 วัน" maxLength={1000} />
       </section>
 
-      {/* แถบยืนยันด้านล่าง */}
-      <div className="fixed inset-x-0 bottom-0 z-30">
-        <div className="mx-auto max-w-md border-t border-line bg-paper/95 px-5 pt-3 pb-[max(0.9rem,env(safe-area-inset-bottom))] backdrop-blur">
-          <div className="mb-2 min-h-6 text-[15px] text-muted">
-            {slot ? <><span className="font-medium text-ink">{relativeDay(date) ?? weekdayShort(date)} {dayNum(date)} {monthShort(date)}</span>, {slot.start_time}–{slot.end_time} น.</> : 'ยังไม่ได้เลือกรอบเวลา'}
+      </div>
+
+      {/* จอกว้าง: กล่องสรุปด้านขวา ติดอยู่ขณะเลื่อน */}
+      <aside className="hidden lg:sticky lg:top-24 lg:block" aria-label="สรุปการจอง">
+        <div className="rounded-2xl border border-line bg-paper p-5">
+          <h2 className="text-lg font-semibold">สรุปการจอง</h2>
+          <dl className="mt-4 space-y-3 text-[16px]">
+            <SummaryRow label="วันที่" value={date ? thaiDateLong(date) : null} />
+            <SummaryRow label="เวลา" value={slot ? `${slot.start_time}–${slot.end_time} น.` : null} placeholder="ยังไม่ได้เลือก" />
+            <SummaryRow label="ผู้รับบริการ" value={person ? `${person.first_name} ${person.last_name}` : null} placeholder="ยังไม่ได้เลือก" />
+          </dl>
+          <Button size="lg" className="mt-5 w-full" disabled={!ready} onClick={() => setReviewing(true)}>ตรวจสอบและจองคิว</Button>
+          <p className="mt-4 rounded-xl bg-sand px-4 py-3 text-[14px] text-clay">
+            มาเช็กอินก่อนเวลานัด 10–15 นาที ยกเลิกเองได้ถึง {Math.round(config.patient_cancel_min / 60)} ชั่วโมงก่อนนัด
+          </p>
+        </div>
+      </aside>
+      </div>
+
+      {/* มือถือ/แท็บเล็ต: แถบยืนยันติดขอบล่าง */}
+      <div className="fixed inset-x-0 bottom-0 z-30 lg:hidden">
+        <div className="border-t border-line bg-paper/95 backdrop-blur">
+          <div className="mx-auto flex max-w-[1120px] flex-col gap-2 px-4 pt-3 pb-[max(0.9rem,env(safe-area-inset-bottom))] sm:flex-row sm:items-center sm:justify-between sm:px-6">
+            <div className="min-h-6 text-[15px] text-muted">
+              {pickedLabel ? <span className="font-medium text-ink">{pickedLabel}</span> : 'ยังไม่ได้เลือกรอบเวลา'}
+            </div>
+            <Button size="lg" className="w-full sm:w-auto sm:min-w-64" disabled={!ready} onClick={() => setReviewing(true)}>ตรวจสอบและจองคิว</Button>
           </div>
-          <Button size="lg" className="w-full" disabled={!ready} onClick={() => setReviewing(true)}>ตรวจสอบและจองคิว</Button>
         </div>
       </div>
 
@@ -253,6 +292,17 @@ export function BookPage() {
   );
 }
 
+/** แถวในกล่องสรุป (จอกว้าง) */
+function SummaryRow({ label, value, placeholder = '-' }) {
+  return (
+    <div>
+      <dt className="text-[14px] text-muted">{label}</dt>
+      <dd className={cx('font-medium', !value && 'text-faint')}>{value ?? placeholder}</dd>
+    </div>
+  );
+}
+
+/** แถวในหน้าต่างยืนยัน */
 function Row({ label, value }) {
   return (
     <div className="flex gap-4 px-4 py-3">

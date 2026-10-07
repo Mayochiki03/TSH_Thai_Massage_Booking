@@ -7,7 +7,7 @@ Node.js 20+ · Express · MySQL 8 · ไม่ใช้ Docker
 | พอร์ต | ใช้กับ | เปิดให้ใคร |
 |---|---|---|
 | **4000** public | หน้าจอง + `/api/public/*` | อินเทอร์เน็ต (ผ่าน Cloudflare Tunnel) — ฟังแค่ `127.0.0.1` |
-| **4001** internal | `/api/auth` `/api/staff` `/api/practitioner` `/api/admin` | LAN เท่านั้น |
+| **4001** internal | `/api/auth` `/api/staff` `/api/practitioner` `/api/admin` `/api/dev` `/api/kiosk` | LAN เท่านั้น |
 
 API ของแอดมิน/เจ้าหน้าที่ **ไม่มีอยู่บนพอร์ต public เลย** ต่อให้คนนอกเข้าเว็บจองได้ ก็เรียก API แอดมินไม่ได้
 
@@ -53,7 +53,9 @@ src/
     public.js           ผู้จอง
     auth.js             login / logout / change-password
     staff.js            เคาน์เตอร์ + หมอนวด
-    admin.js            แอดมิน (CRUD ทั้งหมด)
+    admin.js            ผู้ดูแล: dashboard + CRUD ทั้งหมด
+    dev.js              นักพัฒนา: การเชื่อมต่อ LINE, ผู้ใช้จำลอง, รันงานตั้งเวลา, ล้างข้อมูลทดสอบ
+    kiosk.js            เครื่อง kiosk: รอบว่าง, ค้นจากเบอร์, จอง, เช็กอินด้วยรหัส
   services/
     booking.js          กฎการจอง, transaction กันจองซ้อน, เช็กอิน, เริ่ม/จบบริการ, ปิดรอบ
     notify.js line.js   แจ้งเตือน LINE (Flex message) / LINE API
@@ -104,8 +106,29 @@ src/
 | POST | `/practitioner/appointments/:id/start` · `/complete` | |
 | PUT | `/practitioner/appointments/:id/record` | |
 
-### แอดมิน — `:4001/api/admin`
-`stats` · `settings` · `slot-templates` (+ `/apply`) · `slots` (+ `/generate` `/block` `/unblock`) · `holidays` (+ `/preview`) · `practitioners` · `users` (+ `/reset-password`) · `patients` · `line-users` · `appointments` · `suspensions` (+ `/lift`) · `notification-templates` · `notification-logs` · `connection` (+ `/test` `/clear-test-data`) · `audit-logs`
+### ผู้ดูแล — `:4001/api/admin` (ADMIN, DEV)
+`dashboard` · `settings` (ยกเว้นหมวดการเชื่อมต่อ) · `slot-templates` (+ `/apply`) · `slots` (+ `/generate` `/block` `/unblock`) · `holidays` (+ `/preview`) · `practitioners` · `users` (+ `/reset-password`) · `patients` · `line-users` · `appointments` · `suspensions` (+ `/lift`) · `notification-templates` · `notification-logs` · `audit-logs`
+
+### นักพัฒนา — `:4001/api/dev` (DEV เท่านั้น)
+| Method | Path | |
+|---|---|---|
+| GET | `/system` | ข้อมูลระบบ |
+| GET / PUT | `/connection` | โหมด + ค่า LINE (secret เว้นว่าง = คงค่าเดิม) |
+| POST | `/connection/test` | `{what: public \| token \| quota \| push}` |
+| GET / POST / DELETE | `/mock-users[/:id]` | ผู้ใช้ LINE จำลอง (โหมด LOCAL) |
+| GET / POST | `/jobs`, `/jobs/:name` | `generate-slots` `no-show` `remind-2h` `remind-1d` |
+| POST | `/clear-test-data` | `{confirm_text: "ล้างข้อมูล"}` |
+
+### Kiosk — `:4001/api/kiosk` (KIOSK, ADMIN, DEV)
+| Method | Path | |
+|---|---|---|
+| GET | `/config` · `/availability` | |
+| POST | `/patients/lookup` | `{phone_number}` → ชื่อแบบปิดบัง |
+| POST | `/bookings` | `{slot_id, patient_id + phone_number \| patient}` (ใกล้เวลานัดเช็กอินให้อัตโนมัติ) |
+| POST | `/checkin` | `{code, phone_last4}` |
+
+### สิทธิ์
+`DEV` ⊃ `ADMIN` ⊃ (`STAFF`, `PRACTITIONER`, `KIOSK`) — `requireRole('DEV')` = นักพัฒนาเท่านั้น, role อื่นผ่านได้เฉพาะ route ที่ระบุ
 
 ### รูปแบบ error
 ```json
@@ -115,4 +138,4 @@ src/
 
 ## ผลทดสอบ (MySQL 8.0.46, Node 22)
 
-end-to-end 59 กรณีผ่านทั้งหมด เช่น จองซ้อนพร้อมกัน 5 request สำเร็จ 1 · โควตาวัน/สัปดาห์ · HN ซ้ำแต่ชื่อไม่ตรงถูกปฏิเสธ · ยกเลิกน้อยกว่า 2 ชม. ถูกปฏิเสธ · เช็กอินเร็ว/สายมีคำเตือน · walk-in เช็กอินอัตโนมัติ · หมอนวดต้องเริ่มก่อนจบ · ตั้งวันหยุดที่มีคิว → เตือน → ยกเลิก + แจ้ง · สิทธิ์ตาม role · บังคับเปลี่ยนรหัสผ่าน · ตัด no-show + ระงับสิทธิ์อัตโนมัติ · เตือน 2 ชม. ไม่ส่งซ้ำ
+end-to-end 77 กรณีผ่านทั้งหมด (รวมสิทธิ์ DEV/ADMIN/KIOSK, kiosk จอง/เช็กอิน, dashboard) เช่น จองซ้อนพร้อมกัน 5 request สำเร็จ 1 · โควตาวัน/สัปดาห์ · HN ซ้ำแต่ชื่อไม่ตรงถูกปฏิเสธ · ยกเลิกน้อยกว่า 2 ชม. ถูกปฏิเสธ · เช็กอินเร็ว/สายมีคำเตือน · walk-in เช็กอินอัตโนมัติ · หมอนวดต้องเริ่มก่อนจบ · ตั้งวันหยุดที่มีคิว → เตือน → ยกเลิก + แจ้ง · สิทธิ์ตาม role · บังคับเปลี่ยนรหัสผ่าน · ตัด no-show + ระงับสิทธิ์อัตโนมัติ · เตือน 2 ชม. ไม่ส่งซ้ำ

@@ -1,3 +1,7 @@
+/**
+ * pages/patient/PeoplePage.jsx — รายชื่อผู้รับบริการที่ผู้จองคนนี้จองให้ได้ (ตัวเอง + ครอบครัว)
+ * PersonSheet: หน้าต่างเพิ่ม/แก้ไขผู้รับบริการ ใช้ร่วมกับหน้าจอง
+ */
 import { useEffect, useState } from 'react';
 import { Pencil, Plus, Trash2, UserRound } from 'lucide-react';
 import { patientApi } from '../../lib/liff.js';
@@ -23,13 +27,18 @@ export function PeoplePage() {
   };
 
   return (
-    <div className="px-5 pt-4 pb-10">
-      <h1 className="text-[26px] font-semibold">รายชื่อผู้รับบริการ</h1>
-      <p className="mt-1 mb-5 text-muted">คนที่คุณจองคิวให้ได้</p>
-      <ul className="space-y-2">
+    <div className="pt-6 pb-10 lg:pt-10">
+      <div className="flex flex-wrap items-end justify-between gap-4">
+        <div>
+          <h1 className="text-[28px] font-semibold">รายชื่อผู้รับบริการ</h1>
+          <p className="mt-1 text-muted">คนที่คุณจองคิวให้ได้</p>
+        </div>
+        <Button variant="soft" icon={Plus} className="hidden sm:inline-flex" onClick={() => setEditing('new')}>เพิ่มคนที่จะจองให้</Button>
+      </div>
+      <ul className="mt-6 grid gap-3 md:grid-cols-2">
         {me.patients.map((p) => (
-          <li key={p.patient_id} className="flex items-center gap-3 rounded-2xl border border-line px-4 py-3">
-            <span className="grid size-10 shrink-0 place-items-center rounded-full bg-mist text-muted"><UserRound className="size-5" aria-hidden /></span>
+          <li key={p.patient_id} className="flex items-center gap-3 rounded-2xl border border-line bg-paper px-4 py-3">
+            <span className="grid size-10 shrink-0 place-items-center rounded-full bg-sand text-clay"><UserRound className="size-5" aria-hidden /></span>
             <div className="min-w-0 flex-1">
               <div className="truncate font-medium">{p.first_name} {p.last_name}</div>
               <div className="text-[14px] text-muted">{p.is_self ? 'ตัวเอง' : p.relation} / {p.phone_number}{p.hn ? ` / HN ${p.hn}` : ''}</div>
@@ -45,7 +54,7 @@ export function PeoplePage() {
           </li>
         ))}
       </ul>
-      <Button variant="soft" icon={Plus} className="mt-4 w-full" onClick={() => setEditing('new')}>เพิ่มคนที่จะจองให้</Button>
+      <Button variant="soft" icon={Plus} className="mt-4 w-full sm:hidden" onClick={() => setEditing('new')}>เพิ่มคนที่จะจองให้</Button>
 
       <PersonSheet open={!!editing} person={editing === 'new' ? null : editing} onClose={() => setEditing(null)} />
     </div>

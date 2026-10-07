@@ -1,37 +1,50 @@
 @import "tailwindcss";
 
 /* ============================================================
-   Design tokens — ขาว + เขียวสมุนไพร + ทองขมิ้น (ใช้น้อยที่สุด)
+   Design tokens
+   โทนหลัก: ขาว + เขียวสมุนไพร
+   โทนอุ่น (ใช้น้อย ๆ ให้ไม่จืด): ไอวอรี่ / ทราย / น้ำตาลผ้าลูกประคบ / ทองขมิ้น
    ============================================================ */
 @theme {
   --font-sans: "Sarabun", system-ui, sans-serif;
   --font-display: "Anuphan", "Sarabun", system-ui, sans-serif;
 
-  --color-paper: #ffffff;
-  --color-mist: #f3f7f4;      /* พื้นรอง */
-  --color-line: #dbe6df;      /* เส้นขอบ */
-  --color-herb: #2f6b4f;      /* สีหลัก */
-  --color-herb-dark: #234f3b;
-  --color-leaf: #dcebe1;      /* เขียวพาสเทล */
-  --color-leaf-soft: #ecf4ef;
-  --color-turmeric: #c9a227;  /* ทองขมิ้น — จุดเน้นเท่านั้น */
-  --color-turmeric-soft: #f7efd2;
-  --color-ink: #1f2a24;
-  --color-muted: #5f6f66;
-  --color-faint: #8a9a91;
+  /* พื้นผิว */
+  --color-paper: #ffffff;      /* การ์ด / พื้นหลักของเนื้อหา */
+  --color-ivory: #fbf8f2;      /* พื้นหน้าเว็บ (อุ่นกว่าขาว) */
+  --color-sand: #f4ede1;       /* พื้นรองโทนอุ่น เช่น กล่องหมายเหตุ แถบด้านข้าง */
+  --color-mist: #f2f6f3;       /* พื้นรองโทนเขียว (สถานะว่าง / เลือกอยู่) */
+  --color-line: #e3ddd2;       /* เส้นขอบ (เทาอมอุ่น) */
 
-  /* สีสถานะ (พาสเทล + ตัวหนังสือเข้ม) */
+  /* สีหลัก */
+  --color-herb: #2f6b4f;       /* เขียวสมุนไพร — ปุ่มหลัก / ลิงก์ / สิ่งที่เลือก */
+  --color-herb-dark: #234f3b;
+  --color-leaf: #dcebe1;       /* เขียวพาสเทล */
+  --color-leaf-soft: #edf5f0;
+
+  /* โทนอุ่น */
+  --color-clay: #8c5e3c;       /* น้ำตาลผ้าลูกประคบ — ตัวอักษรเน้นโทนอุ่น (ใช้น้อย) */
+  --color-clay-soft: #f3e6da;
+  --color-turmeric: #c9a227;   /* ทองขมิ้น — จุดเน้นเล็ก ๆ เท่านั้น */
+  --color-turmeric-soft: #f7efd2;
+
+  /* ตัวอักษร */
+  --color-ink: #2a2620;        /* เกือบดำอมน้ำตาล (อุ่นกว่าเทาเขียวเดิม) */
+  --color-muted: #6b645a;
+  --color-faint: #9b9387;
+
+  /* สีสถานะ (พาสเทล + ตัวอักษรเข้ม) — มีป้ายข้อความกำกับเสมอ ไม่ใช้สีอย่างเดียว */
   --color-sky-soft: #e3eef8;
   --color-sky-ink: #2f5e8a;
   --color-rose-soft: #f8e4e1;
   --color-rose-ink: #9a3b32;
-  --color-stone-soft: #eceeed;
-  --color-stone-ink: #5c6461;
+  --color-stone-soft: #eeebe6;
+  --color-stone-ink: #5f5a52;
 }
 
 html { -webkit-text-size-adjust: 100%; }
 body {
-  @apply bg-paper text-ink font-sans antialiased;
+  @apply bg-ivory text-ink font-sans antialiased;
   font-size: 17px;           /* อ่านง่ายสำหรับผู้สูงอายุ */
   line-height: 1.6;
 }
@@ -51,7 +64,7 @@ h1, h2, h3, .font-display { font-family: var(--font-display); line-height: 1.3; 
   width: 24px;
   height: 24px;
   border-radius: 9999px;
-  background: var(--notch-bg, var(--color-mist));
+  background: var(--notch-bg, var(--color-ivory));
   border: 1px solid var(--color-line);
 }
 .ticket-notch::before { left: -13px; clip-path: inset(0 0 0 50%); }

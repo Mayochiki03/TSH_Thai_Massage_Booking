@@ -1,3 +1,8 @@
+/**
+ * services/settings.js — อ่าน/เขียนตาราง settings (ค่าที่แอดมินปรับได้)
+ *   - cache ในหน่วยความจำ 30 วินาที (ลดการ query) และล้าง cache ทันทีเมื่อแก้ค่า
+ *   - แปลงชนิดค่าให้อัตโนมัติ (INT / BOOL / STRING) และเข้ารหัส/ถอดรหัสค่า SECRET
+ */
 import { query } from '../db.js';
 import { encrypt, decrypt } from '../utils/crypto.js';
 import { badRequest, notFound } from '../utils/errors.js';

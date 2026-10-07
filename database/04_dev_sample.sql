@@ -27,8 +27,10 @@ SELECT 1, d.dt, t.start_time, t.end_time
 -- ---------------------------------------------------------------------
 INSERT INTO staff_users (username, password_hash, full_name, role, practitioner_id, must_change_password) VALUES
   ('counter1', '$2b$10$xMyz7DWrIDeu5usbw56VTexzNxP3gTpImGD6nsmOLjKYHMkA7KbKG', 'เจ้าหน้าที่เคาน์เตอร์ (ทดสอบ)', 'STAFF',        NULL, FALSE),
-  ('therapist1','$2b$10$xMyz7DWrIDeu5usbw56VTexzNxP3gTpImGD6nsmOLjKYHMkA7KbKG', 'หมอนวด (ทดสอบ)',              'PRACTITIONER', 1,    FALSE);
-UPDATE staff_users SET must_change_password = FALSE WHERE username = 'admin';
+  ('therapist1','$2b$10$xMyz7DWrIDeu5usbw56VTexzNxP3gTpImGD6nsmOLjKYHMkA7KbKG', 'หมอนวด (ทดสอบ)',              'PRACTITIONER', 1,    FALSE),
+  ('kiosk1',    '$2b$10$xMyz7DWrIDeu5usbw56VTexzNxP3gTpImGD6nsmOLjKYHMkA7KbKG', 'เครื่อง kiosk หน้าคลินิก',     'KIOSK',        NULL, FALSE);
+-- dev: ไม่ต้องเปลี่ยนรหัสผ่านตอนทดสอบ
+UPDATE staff_users SET must_change_password = FALSE WHERE username IN ('admin', 'dev');
 
 UPDATE settings SET setting_value = '02-000-0000' WHERE setting_key = 'counter_phone';
 

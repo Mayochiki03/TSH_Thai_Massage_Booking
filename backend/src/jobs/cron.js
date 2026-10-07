@@ -1,3 +1,10 @@
+/**
+ * jobs/cron.js — งานที่ระบบทำเองตามเวลา (และเรียกด้วยมือได้จากเมนูนักพัฒนา)
+ *   generateSlots     สร้างรอบเวลาล่วงหน้า (ข้ามเสาร์-อาทิตย์/วันหยุด)      ทุกวัน 00:05 + ตอนเปิดเซิร์ฟเวอร์
+ *   markNoShows       คิวที่เลยเวลานัดเกินกำหนด → NO_SHOW + ระงับสิทธิ์อัตโนมัติ  ทุก 1 นาที
+ *   sendReminders2h   เตือนก่อนนัด 2 ชม. (ส่งครั้งเดียวต่อคิว)                 ทุก 5 นาที
+ *   sendReminders1d   เตือนล่วงหน้า 1 วัน (ปิดไว้เป็นค่าเริ่มต้น)               ทุกต้นชั่วโมง
+ */
 import cron from 'node-cron';
 import { pool, query } from '../db.js';
 import { getSettings } from '../services/settings.js';
@@ -87,12 +94,16 @@ export async function sendReminders2h() {
 // ---------------------------------------------------------------------
 // 4) เตือนล่วงหน้า 1 วัน (ปิดไว้เป็นค่าเริ่มต้น — เปิดที่ template REMIND_1D)
 // ---------------------------------------------------------------------
-export async function sendReminders1d() {
+/**
+ * @param {{ignoreHour?: boolean}} [opts] ignoreHour = ส่งทันทีไม่ต้องรอชั่วโมงที่ตั้งไว้ (ใช้จากเมนูนักพัฒนา)
+ * @returns {Promise<number>} จำนวนคิวที่ส่งเตือน
+ */
+export async function sendReminders1d({ ignoreHour = false } = {}) {
   const [tpl] = await query("SELECT is_enabled FROM notification_templates WHERE type = 'REMIND_1D'");
   if (!tpl?.is_enabled) return 0;
   const { remind_1d_hour: hour } = await getSettings(['remind_1d_hour']);
   const [{ h }] = await query('SELECT HOUR(NOW()) AS h');
-  if (Number(h) !== hour) return 0;
+  if (!ignoreHour && Number(h) !== hour) return 0;
   const rows = await query(
     `SELECT a.appointment_id
        FROM appointments a JOIN time_slots t ON t.slot_id = a.slot_id
@@ -129,7 +140,7 @@ export function startCron() {
   cron.schedule('5 0 * * *', genSlots, { timezone: TZ });                        // ทุกวัน 00:05
   cron.schedule('* * * * *', safe('no-show', markNoShows), { timezone: TZ });     // ทุกนาที
   cron.schedule('*/5 * * * *', safe('remind 2h', sendReminders2h), { timezone: TZ }); // ทุก 5 นาที
-  cron.schedule('0 * * * *', safe('remind 1d', sendReminders1d), { timezone: TZ });   // ทุกต้นชั่วโมง
+  cron.schedule('0 * * * *', safe('remind 1d', () => sendReminders1d()), { timezone: TZ });   // ทุกต้นชั่วโมง
   genSlots(); // รันทันทีตอนเปิดเซิร์ฟเวอร์
   console.log('[cron] started');
 }

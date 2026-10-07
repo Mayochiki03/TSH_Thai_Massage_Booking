@@ -1,3 +1,7 @@
+/**
+ * config.js — อ่านค่าจาก .env แล้วรวมเป็น object เดียว + ตรวจค่าที่จำเป็น
+ * ถ้าขาดค่าหรือใช้ค่าตัวอย่างบน production เซิร์ฟเวอร์จะไม่ยอมเปิด (กันลืมเปลี่ยน secret)
+ */
 import 'dotenv/config';
 
 function required(name) {

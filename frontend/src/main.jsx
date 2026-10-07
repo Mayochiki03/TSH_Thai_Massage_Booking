@@ -1,3 +1,6 @@
+/**
+ * main.jsx — จุดเริ่มต้นของหน้าเว็บ: โหลดฟอนต์ (ฝังในเว็บ) + CSS แล้วแสดง <App />
+ */
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 // ฟอนต์ฝังในเว็บ (ไม่พึ่ง Google Fonts — ใช้ได้แม้เครือข่าย รพ. บล็อก)

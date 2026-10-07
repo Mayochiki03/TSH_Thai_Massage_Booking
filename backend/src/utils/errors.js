@@ -1,3 +1,9 @@
+/**
+ * utils/errors.js — รูปแบบ error ของ API
+ *   HttpError → { error: { code, message, ...extra } } พร้อม HTTP status
+ *   errorHandler แปลง error ของ zod / MySQL ให้เป็นข้อความภาษาไทยที่ผู้ใช้เข้าใจ
+ *   ah() ห่อ async handler ให้ส่ง error เข้า errorHandler อัตโนมัติ
+ */
 import { ZodError } from 'zod';
 
 export class HttpError extends Error {

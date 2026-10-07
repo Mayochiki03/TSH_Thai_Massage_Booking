@@ -1,3 +1,6 @@
+/**
+ * routes/schemas.js — รูปแบบข้อมูลที่ใช้ตรวจ request (zod) ร่วมกันหลาย route
+ */
 import { z } from 'zod';
 
 const trimmed = (max) => z.string().trim().min(1, 'กรุณากรอกข้อมูล').max(max);

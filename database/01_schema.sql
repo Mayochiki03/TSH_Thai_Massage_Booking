@@ -76,7 +76,12 @@ CREATE TABLE staff_users (
   username             VARCHAR(50)  NOT NULL UNIQUE,
   password_hash        VARCHAR(255) NOT NULL,              -- bcrypt
   full_name            VARCHAR(200) NOT NULL,
-  role                 ENUM('ADMIN','STAFF','PRACTITIONER') NOT NULL,
+  -- DEV          = นักพัฒนา: ทุกเมนู + เมนูนักพัฒนา (การเชื่อมต่อ / ผู้ใช้จำลอง / เครื่องมือทดสอบ)
+  -- ADMIN        = ผู้ดูแลระบบ: dashboard + ตั้งค่าทั้งหมด (ยกเว้นเมนูนักพัฒนา)
+  -- STAFF        = เจ้าหน้าที่เคาน์เตอร์
+  -- PRACTITIONER = หมอนวด
+  -- KIOSK        = บัญชีของเครื่อง kiosk (จอง walk-in / เช็กอินด้วยตัวเอง) ใช้ได้แค่หน้า kiosk
+  role                 ENUM('DEV','ADMIN','STAFF','PRACTITIONER','KIOSK') NOT NULL,
   practitioner_id      INT NULL,                           -- ใช้เมื่อ role = PRACTITIONER
   must_change_password BOOLEAN NOT NULL DEFAULT TRUE,
   is_active            BOOLEAN NOT NULL DEFAULT TRUE,
@@ -134,7 +139,8 @@ CREATE TABLE appointments (
   booked_by_staff        INT NULL,                         -- เจ้าหน้าที่ที่ทำรายการ
   booker_relation        VARCHAR(50) NULL,                 -- ความสัมพันธ์ผู้จอง → ผู้รับบริการ
   slot_id                BIGINT  NOT NULL,
-  booking_channel        ENUM('ONLINE','WALK_IN','STAFF') NOT NULL DEFAULT 'ONLINE',
+  -- ONLINE = ผ่าน LINE, WALK_IN = เจ้าหน้าที่รับหน้าเคาน์เตอร์, STAFF = เจ้าหน้าที่จองแทน (โทรศัพท์), KIOSK = จองเองที่เครื่อง kiosk
+  booking_channel        ENUM('ONLINE','WALK_IN','STAFF','KIOSK') NOT NULL DEFAULT 'ONLINE',
   chief_complaint        TEXT NULL,
   status                 ENUM('BOOKED','CHECKED_IN','IN_SERVICE','COMPLETED','NO_SHOW','CANCELLED')
                          NOT NULL DEFAULT 'BOOKED',

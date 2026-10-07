@@ -1,3 +1,10 @@
+/**
+ * services/line.js — ติดต่อ LINE Platform
+ *   lineConfig      อ่านค่าการเชื่อมต่อจาก settings (token ถอดรหัสแล้ว)
+ *   patientUrl      สร้างลิงก์เปิดหน้าผู้จอง (ผ่าน LIFF ถ้ามี)
+ *   verifyIdToken   ตรวจ ID token จาก liff.getIDToken() กับ LINE
+ *   pushMessages / getQuota / getBotInfo   Messaging API
+ */
 import { getSettings } from './settings.js';
 
 const API = 'https://api.line.me';

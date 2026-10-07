@@ -1,3 +1,10 @@
+/**
+ * pages/staff/QueuePage.jsx — หน้าคิววันนี้ของเคาน์เตอร์ (/staff/queue)
+ *   - ช่องเช็กอิน: พิมพ์รหัสจอง (6 ตัว) หรือค้นจากชื่อ/เบอร์/HN → หน้าต่างเช็กอิน (เตือนถ้ามาเร็ว/สาย)
+ *   - ไทม์ไลน์ทุกรอบของวัน: สถานะ, ผู้จอง (LINE / ลูกจองให้แม่ / walk-in), อาการ
+ *   - รอบว่าง: รับ walk-in (เช็กอินให้ทันที) หรือจองแทนทางโทรศัพท์
+ *   - อัปเดตเองทุก 20 วินาที
+ */
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ChevronLeft, ChevronRight, Search, UserPlus, PhoneCall, MoreHorizontal, RefreshCw,
@@ -66,10 +73,10 @@ export function QueuePage() {
           <p className="text-muted">{thaiDateLong(date)}</p>
         </div>
         <div className="flex items-center gap-1 rounded-xl border border-line bg-paper p-1">
-          <button type="button" onClick={() => setDate(addDays(date, -1))} className="grid size-10 place-items-center rounded-lg text-muted hover:bg-mist" aria-label="วันก่อนหน้า"><ChevronLeft className="size-5" /></button>
-          <button type="button" onClick={() => setDate(todayYmd())} disabled={isToday} className="h-10 rounded-lg px-3 font-display text-[15px] font-medium disabled:text-faint hover:bg-mist">วันนี้</button>
-          <input type="date" value={date} onChange={(e) => e.target.value && setDate(e.target.value)} className="h-10 rounded-lg px-2 text-[15px] hover:bg-mist" aria-label="เลือกวันที่" />
-          <button type="button" onClick={() => setDate(addDays(date, 1))} className="grid size-10 place-items-center rounded-lg text-muted hover:bg-mist" aria-label="วันถัดไป"><ChevronRight className="size-5" /></button>
+          <button type="button" onClick={() => setDate(addDays(date, -1))} className="grid size-10 place-items-center rounded-lg text-muted hover:bg-sand" aria-label="วันก่อนหน้า"><ChevronLeft className="size-5" /></button>
+          <button type="button" onClick={() => setDate(todayYmd())} disabled={isToday} className="h-10 rounded-lg px-3 font-display text-[15px] font-medium disabled:text-faint hover:bg-sand">วันนี้</button>
+          <input type="date" value={date} onChange={(e) => e.target.value && setDate(e.target.value)} className="h-10 rounded-lg px-2 text-[15px] hover:bg-sand" aria-label="เลือกวันที่" />
+          <button type="button" onClick={() => setDate(addDays(date, 1))} className="grid size-10 place-items-center rounded-lg text-muted hover:bg-sand" aria-label="วันถัดไป"><ChevronRight className="size-5" /></button>
         </div>
       </div>
 
@@ -168,7 +175,7 @@ function SlotRow({ slot: s, isPast, onCheckIn, onBook, reload }) {
         <div className={cx('font-display text-[22px] font-semibold leading-none', isPast && !a && 'text-faint')}>{s.start_time}</div>
         <div className="mt-1 text-[13px] text-muted">ถึง {s.end_time}</div>
       </div>
-      <span className={cx('relative z-10 mt-5 size-3.5 shrink-0 rounded-full ring-4 ring-mist', DOT[s.state] ?? 'bg-line')} aria-hidden />
+      <span className={cx('relative z-10 mt-5 size-3.5 shrink-0 rounded-full ring-4 ring-ivory', DOT[s.state] ?? 'bg-line')} aria-hidden />
 
       <div className={cx('min-w-0 flex-1 rounded-2xl border bg-paper px-4 py-3.5 sm:px-5', a ? 'border-line' : 'border-dashed border-line')}>
         {a ? (
@@ -200,12 +207,12 @@ function SlotRow({ slot: s, isPast, onCheckIn, onBook, reload }) {
               <div className="flex items-center gap-1.5">
                 <Button size="sm" onClick={() => onCheckIn(a)}>เช็กอิน</Button>
                 <div className="relative" ref={menuRef}>
-                  <button type="button" onClick={() => setMenu((m) => !m)} className="grid size-9 place-items-center rounded-lg text-muted hover:bg-mist" aria-label="ตัวเลือกเพิ่มเติม" aria-expanded={menu}>
+                  <button type="button" onClick={() => setMenu((m) => !m)} className="grid size-9 place-items-center rounded-lg text-muted hover:bg-sand" aria-label="ตัวเลือกเพิ่มเติม" aria-expanded={menu}>
                     <MoreHorizontal className="size-5" />
                   </button>
                   {menu && (
                     <div className="anim-fade absolute top-10 right-0 z-20 w-48 overflow-hidden rounded-xl border border-line bg-paper py-1 shadow-lg shadow-ink/10">
-                      <button type="button" onClick={() => act('noshow')} className="flex w-full items-center gap-2 px-4 py-2.5 text-left hover:bg-mist"><CircleDashed className="size-4" aria-hidden />ไม่มาตามนัด</button>
+                      <button type="button" onClick={() => act('noshow')} className="flex w-full items-center gap-2 px-4 py-2.5 text-left hover:bg-sand"><CircleDashed className="size-4" aria-hidden />ไม่มาตามนัด</button>
                       <button type="button" onClick={() => act('cancel')} className="flex w-full items-center gap-2 px-4 py-2.5 text-left text-rose-ink hover:bg-rose-soft"><Ban className="size-4" aria-hidden />ยกเลิกคิว</button>
                     </div>
                   )}
@@ -317,7 +324,7 @@ function SearchResults({ results, onClose, onPick }) {
         <ul className="divide-y divide-line">
           {results.list.map((a) => (
             <li key={a.appointment_id}>
-              <button type="button" onClick={() => onPick(a)} className="flex w-full items-center gap-3 py-3 text-left hover:bg-mist">
+              <button type="button" onClick={() => onPick(a)} className="flex w-full items-center gap-3 py-3 text-left hover:bg-sand">
                 <div className="min-w-0 flex-1">
                   <div className="font-medium">{a.patient.first_name} {a.patient.last_name}</div>
                   <div className="text-[14px] text-muted">{relativeDay(a.slot_date) ?? thaiDate(a.slot_date)} {a.start_time} น. / {a.booking_code}</div>

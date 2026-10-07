@@ -1,3 +1,10 @@
+/**
+ * services/booking.js — กฎการจองทั้งหมดของระบบ (ใช้ร่วมกันทุกช่องทาง: LINE / kiosk / เคาน์เตอร์)
+ *   getPublicAvailability   รอบว่างสำหรับผู้จองและ kiosk
+ *   createBooking           จองใน transaction (กันจองซ้อน + ตรวจโควตา/ระงับสิทธิ์)
+ *   cancel / confirm / checkIn / startService / completeService / saveServiceRecord   เปลี่ยนสถานะคิว
+ *   affectedAppointments / closeSlotsAndCancel   ปิดรอบ/วันหยุด แล้วยกเลิกคิวที่จองไว้
+ */
 import { query, queryOne, withTx } from '../db.js';
 import { getSettings } from './settings.js';
 import { bookingCode } from '../utils/crypto.js';
@@ -11,11 +18,20 @@ const BOOKING_KEYS = [
 export const bookingRules = () => getSettings(BOOKING_KEYS);
 
 // ---------------------------------------------------------------------
-// ช่วงวันที่จองได้ + รอบว่าง (ฝั่งผู้จอง)
+// ช่วงวันที่จองได้ + รอบว่าง (ฝั่งผู้จอง LINE และเครื่อง kiosk)
 // ---------------------------------------------------------------------
-export async function getPublicAvailability() {
+/**
+ * รายการวันที่จองได้ พร้อมสถานะแต่ละรอบ (ไม่เปิดเผยว่าใครจอง)
+ *
+ * @param {'ONLINE'|'KIOSK'} [channel='ONLINE']
+ *   ONLINE: เริ่มวันนี้ (ถ้า allow_same_day) หรือพรุ่งนี้, รอบที่เหลือเวลาน้อยกว่า booking_cutoff_min = ปิดรับ
+ *   KIOSK : เริ่มวันนี้เสมอ, รอบที่เริ่มไปแล้วไม่เกิน no_show_after_min นาทียังรับได้ (คนมายืนอยู่หน้าคลินิกแล้ว)
+ * @returns {Promise<Array<{date: string, slots: Array<{slot_id:number,start_time:string,end_time:string,status:'AVAILABLE'|'UNAVAILABLE'|'HOLIDAY'}>}>>}
+ */
+export async function getPublicAvailability(channel = 'ONLINE') {
   const r = await bookingRules();
-  const minDay = r.allow_same_day ? 0 : 1;
+  const kiosk = channel === 'KIOSK';
+  const minDay = kiosk || r.allow_same_day ? 0 : 1;
   const rows = await query(
     `SELECT v.slot_id, v.slot_date, v.start_time, v.end_time, v.availability,
             TIMESTAMPDIFF(MINUTE, NOW(), TIMESTAMP(v.slot_date, v.start_time)) AS mins_until
@@ -28,20 +44,21 @@ export async function getPublicAvailability() {
   const open = new Set(String(r.open_weekdays).split(',').map((x) => Number(x.trim())));
   const days = new Map();
   for (const s of rows) {
-    const wd = isoWeekday(s.slot_date);
-    if (!open.has(wd)) continue;
+    if (!open.has(isoWeekday(s.slot_date))) continue;
     let status = s.availability; // AVAILABLE / TAKEN / BLOCKED / HOLIDAY
-    if (status === 'AVAILABLE' && s.mins_until < r.booking_cutoff_min) status = 'CLOSED';
+    const tooLate = kiosk ? s.mins_until < -r.no_show_after_min : s.mins_until < r.booking_cutoff_min;
+    if (status === 'AVAILABLE' && tooLate) status = 'CLOSED';
     if (!days.has(s.slot_date)) days.set(s.slot_date, []);
     days.get(s.slot_date).push({
       slot_id: s.slot_id, start_time: s.start_time.slice(0, 5), end_time: s.end_time.slice(0, 5),
-      // ฝั่งผู้จองเห็นแค่ว่าง / ไม่ว่าง (ไม่บอกว่าใครจอง)
+      // ผู้จองเห็นแค่ ว่าง / ไม่ว่าง / วันหยุด (ไม่บอกว่าใครจอง)
       status: status === 'AVAILABLE' ? 'AVAILABLE' : status === 'HOLIDAY' ? 'HOLIDAY' : 'UNAVAILABLE',
     });
   }
   return [...days.entries()].map(([date, slots]) => ({ date, slots }));
 }
 
+/** 'YYYY-MM-DD' → 1 (จันทร์) … 7 (อาทิตย์) ตามรูปแบบ ISO เดียวกับ settings.open_weekdays */
 function isoWeekday(ymd) {
   const d = new Date(`${ymd}T00:00:00Z`).getUTCDay(); // 0=อา.
   return d === 0 ? 7 : d;
@@ -51,19 +68,37 @@ function isoWeekday(ymd) {
 // สร้างการจอง (transaction)
 // ---------------------------------------------------------------------
 /**
+ * สร้างการจอง 1 คิว ภายใน transaction เดียว
+ *
+ * ลำดับการตรวจ (ล้มข้อไหน throw HttpError ทันที → rollback ทั้งหมด):
+ *   1. ล็อกแถว slot (FOR UPDATE) → ตรวจวันหยุด / บล็อก / ช่วงเวลาที่จองได้ตามช่องทาง
+ *   2. slot มีคิว active แล้วหรือยัง (SLOT_TAKEN)
+ *   3. ล็อกแถวผู้รับบริการ → ตรวจระงับสิทธิ์ (SUSPENDED)
+ *   4. ตรวจโควตาวัน/สัปดาห์ (QUOTA_DAY / QUOTA_WEEK)
+ *   5. INSERT — ถ้ามี request อื่นแทรกได้ uq_active_slot จะกันอีกชั้น
+ *
+ * กฎตามช่องทาง:
+ *   ONLINE  (LINE)          : วันเปิดทำการ, ช่วงจองล่วงหน้า, ปิดรับก่อนนัด booking_cutoff_min
+ *   KIOSK   (เครื่องหน้าคลินิก): วันนี้ถึงช่วงจองล่วงหน้า, รอบที่เริ่มแล้วไม่เกิน no_show_after_min นาทียังจองได้
+ *                            มาถึงแล้ว → ถ้าใกล้เวลานัด (≤ checkin_early_min) เช็กอินให้อัตโนมัติ
+ *   WALK_IN / STAFF (เจ้าหน้าที่): วันนี้ขึ้นไป ก่อนรอบจบ, ข้ามโควตา/ระงับสิทธิ์ได้ด้วย force
+ *
  * @param {object} p
- * @param {number} p.patientId
- * @param {number} p.slotId
- * @param {string} [p.chiefComplaint]
- * @param {'ONLINE'|'WALK_IN'|'STAFF'} p.channel
+ * @param {number} p.patientId         ผู้รับบริการ
+ * @param {number} p.slotId            รอบเวลา
+ * @param {string} [p.chiefComplaint]  อาการเบื้องต้น
+ * @param {'ONLINE'|'WALK_IN'|'STAFF'|'KIOSK'} p.channel
  * @param {string} [p.lineUserId]      ผู้จอง (ONLINE)
- * @param {string} [p.relation]
- * @param {number} [p.staffId]         เจ้าหน้าที่ (WALK_IN / STAFF)
- * @param {boolean} [p.force]          เจ้าหน้าที่ยืนยันข้ามโควตา/ระงับสิทธิ์
+ * @param {string} [p.relation]        ความสัมพันธ์ผู้จอง → ผู้รับบริการ (ONLINE)
+ * @param {number} [p.staffId]         บัญชีที่ทำรายการ (WALK_IN / STAFF / KIOSK)
+ * @param {boolean} [p.force]          เจ้าหน้าที่ยืนยันข้ามโควตา/ระงับสิทธิ์ (KIOSK/ONLINE ใช้ไม่ได้)
+ * @returns {Promise<object>} แถวจาก v_appointment_details ของคิวที่สร้าง
  */
 export async function createBooking(p) {
   const r = await bookingRules();
-  const isStaff = p.channel !== 'ONLINE';
+  // เฉพาะเจ้าหน้าที่ (WALK_IN / STAFF) ที่ข้ามโควตา/ระงับสิทธิ์ได้
+  const isStaff = p.channel === 'WALK_IN' || p.channel === 'STAFF';
+  const isKiosk = p.channel === 'KIOSK';
 
   const appointmentId = await withTx(async (conn) => {
     // 1) ล็อก slot แถวนี้ — request ที่จอง slot เดียวกันจะต่อคิวกัน
@@ -88,6 +123,10 @@ export async function createBooking(p) {
     if (isStaff) {
       // เจ้าหน้าที่: จองได้ตั้งแต่วันนี้ จนถึงก่อนรอบจบ (รองรับ walk-in ในรอบที่เริ่มไปแล้ว)
       if (slot.days_ahead < 0 || slot.mins_until_end <= 0) throw conflict('SLOT_PASSED', 'รอบนี้ผ่านไปแล้ว');
+    } else if (isKiosk) {
+      // kiosk: ผู้ป่วยอยู่หน้าคลินิกแล้ว → จองรอบวันนี้ได้จนเลยเวลาเริ่มไม่เกิน no_show_after_min
+      if (slot.days_ahead < 0 || slot.mins_until < -r.no_show_after_min) throw conflict('SLOT_PASSED', 'รอบนี้ผ่านไปแล้ว');
+      if (slot.days_ahead > r.advance_booking_days) throw conflict('TOO_FAR', `จองล่วงหน้าได้ไม่เกิน ${r.advance_booking_days} วัน`);
     } else {
       const open = String(r.open_weekdays).split(',').map((x) => Number(x.trim()));
       if (!open.includes(slot.wd)) throw conflict('CLOSED_DAY', 'วันนี้ไม่เปิดให้จอง');
@@ -136,6 +175,7 @@ export async function createBooking(p) {
     }
 
     // 5) INSERT — uq_active_slot กันจองซ้อนอีกชั้น / สุ่มรหัสใหม่ถ้ารหัสชน
+    const autoCheckIn = p.channel === 'WALK_IN' || (isKiosk && slot.mins_until <= r.checkin_early_min);
     for (let attempt = 0; attempt < 5; attempt++) {
       try {
         const [res] = await conn.query(
@@ -146,10 +186,10 @@ export async function createBooking(p) {
           [
             bookingCode(), p.patientId, p.lineUserId ?? null, p.staffId ?? null, p.relation ?? null,
             p.slotId, p.channel, p.chiefComplaint || null,
-            // walk-in มาถึงแล้ว → เช็กอินให้เลย
-            p.channel === 'WALK_IN' ? 'CHECKED_IN' : 'BOOKED',
-            p.channel === 'WALK_IN' ? new Date() : null,
-            p.channel === 'WALK_IN' ? p.staffId : null,
+            // walk-in มาถึงแล้ว → เช็กอินให้เลย / kiosk เช็กอินให้ถ้าใกล้เวลานัด
+            autoCheckIn ? 'CHECKED_IN' : 'BOOKED',
+            autoCheckIn ? new Date() : null,
+            autoCheckIn ? p.staffId : null,
           ],
         );
         return res.insertId;

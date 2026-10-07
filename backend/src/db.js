@@ -1,3 +1,8 @@
+/**
+ * db.js — การเชื่อมต่อ MySQL (connection pool) + ตัวช่วย query / transaction
+ *  - ทุก connection ตั้ง time_zone = +07:00 → NOW()/CURDATE() เป็นเวลาไทยเสมอ
+ *  - dateStrings: วันที่/เวลาคืนเป็น string ('2026-10-07', '09:00:00') ไม่แปลงเป็น JS Date (กันเวลาเพี้ยน)
+ */
 import mysql from 'mysql2/promise';
 import { config } from './config.js';
 

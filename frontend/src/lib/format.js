@@ -1,3 +1,6 @@
+/**
+ * lib/format.js — จัดรูปแบบวันที่/เวลาภาษาไทย (พ.ศ., เวลาไทย) + ชื่อสถานะคิว + ตัวเลือกความสัมพันธ์
+ */
 const tz = 'Asia/Bangkok';
 const toDate = (ymd) => new Date(`${String(ymd).slice(0, 10)}T00:00:00+07:00`);
 

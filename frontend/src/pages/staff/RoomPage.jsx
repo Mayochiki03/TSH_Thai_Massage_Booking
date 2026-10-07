@@ -1,3 +1,8 @@
+/**
+ * pages/staff/RoomPage.jsx — หน้าห้องนวดของหมอนวด (/staff/room)
+ *   ซ้าย: คิววันนี้ / ขวา: คิวที่กำลังดูแล (กำลังนวด → มาถึงแล้ว → ที่เลือก)
+ *   เรียกเข้ารับบริการ → จับเวลา → บันทึกจุดที่นวด/คำแนะนำ → จบการนวด และดูประวัติครั้งก่อน
+ */
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Play, Square, Save, ChevronRight, Clock, NotebookPen, UserRound } from 'lucide-react';
 import { staffApi } from '../../lib/api.js';

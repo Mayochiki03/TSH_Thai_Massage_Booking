@@ -1,8 +1,8 @@
 # Frontend — ระบบจองคิวนวดแผนไทย
 
-React 19 · Vite · Tailwind CSS 4 · lucide-react · LIFF SDK · ฟอนต์ Anuphan + Sarabun (ฝังในเว็บ ไม่พึ่ง Google Fonts)
+React 19 · Vite 6 · Tailwind CSS 4 · React Router 7 · lucide-react · LIFF SDK · ฟอนต์ Anuphan + Sarabun (ฝังในเว็บ)
 
-## รัน (ต้องเปิด backend ก่อน)
+## รัน (เปิด backend ก่อน)
 
 ```powershell
 cd frontend
@@ -10,30 +10,51 @@ npm install
 npm run dev
 ```
 
-| หน้า | URL |
-|---|---|
-| ผู้จอง (มือถือ) | http://localhost:5173 |
-| เจ้าหน้าที่ / หมอนวด | http://localhost:5173/staff |
+| แอป | URL | บัญชีทดสอบ (`admin1234`) |
+|---|---|---|
+| ผู้จอง | http://localhost:5173 | เลือกผู้ใช้จำลองจากเมนูนักพัฒนา |
+| หน้างาน | http://localhost:5173/staff | `counter1`, `therapist1` |
+| ผู้ดูแลระบบ | http://localhost:5173/admin | `admin`, `dev` |
+| Kiosk | http://localhost:5173/kiosk | `kiosk1` |
 
-Vite ส่งต่อ API ให้เอง: `/api/public/*` → :4000 และ `/api/*` → :4001
+Vite ส่งต่อ API: `/api/public/*` → :4000, `/api/*` → :4001
+ลองบนมือถือ/แท็บเล็ตใน Wi-Fi เดียวกัน: `http://<IP เครื่อง>:5173` (ดู IP ด้วย `ipconfig`)
 
-**ลองบนมือถือจริง (Wi-Fi เดียวกัน):** เปิด `http://<IP เครื่อง>:5173` (ดู IP ด้วย `ipconfig`)
+## โครงสร้าง
+
+```
+src/
+  App.jsx                 เส้นทางของ 4 แอป (staff / admin / kiosk โหลดแยกไฟล์)
+  index.css               design tokens (สี / ฟอนต์) + animation
+  lib/
+    api.js                เรียก API + ApiError
+    session.jsx           SessionGate: เข้าสู่ระบบ / เปลี่ยนรหัส / ตรวจ role (ใช้ร่วม staff, admin, kiosk)
+    liff.js               ยืนยันตัวตนผู้จอง (LIFF หรือผู้ใช้จำลอง) + ส่งตั๋วเข้าแชท
+    useLoad.js            hook โหลดข้อมูลสำหรับหน้าแอดมิน
+    format.js             วันที่/เวลาภาษาไทย, ชื่อสถานะ
+  components/
+    ui.jsx                ปุ่ม ฟอร์ม sheet toast การ์ด ฯลฯ
+    ClosureSheet.jsx      ปิดรับ/วันหยุด + ยืนยันเมื่อมีคิว
+    Logo.jsx              โลโก้ลูกประคบ
+  pages/
+    patient/              ผู้จอง: จอง, ตั๋ว, การจองของฉัน, รายชื่อ, PDPA
+    staff/                เคาน์เตอร์ (QueuePage), ห้องนวด (RoomPage)
+    admin/                Dashboard + เมนูผู้ดูแลทั้งหมด
+    admin/dev/            เมนูนักพัฒนา: ระบบ, การเชื่อมต่อ LINE, ผู้ใช้จำลอง
+    kiosk/                จอสัมผัสหน้าคลินิก
+```
+
+## Responsive
+
+- **ผู้จอง:** มือถือคอลัมน์เดียว + ปุ่มจองติดขอบล่าง / จอกว้าง (≥1024px) 2 คอลัมน์ + กล่องสรุปการจองด้านขวา
+- **หน้างาน / ผู้ดูแล:** จอกว้างมีแถบเมนูซ้าย / จอเล็กเป็นแถบบน (ผู้ดูแลมีลิ้นชักเมนู) ตารางเลื่อนแนวนอนได้
+- **Kiosk:** ขนาดทุกอย่างใช้หน่วย `em` จาก font-size ฐาน `clamp(16px, 2.3vmin, 34px)` → ขยายตามจอเอง
+  แนวนอนวางซ้าย-ขวา (`landscape:`) / แนวตั้งเรียงบน-ล่าง (`portrait:`)
 
 ## โหมดทดสอบ (LOCAL)
 
-แถบสีเหลืองด้านบนหน้าผู้จอง ใช้สลับผู้ใช้ LINE จำลองได้:
-- **Somsri**: มีแม่ (บุญมา) ในรายชื่อ, มีคิวพรุ่งนี้ให้แม่
-- **Wichai**: บุคคลทั่วไป ไม่มี HN
-- **Prasert**: เคยไม่มาตามนัด
-- **ผู้ใช้ใหม่**: เริ่มจากหน้ายินยอม PDPA → กรอกข้อมูลตัวเอง
-
-เมื่อเปลี่ยนโหมดเป็น DEV_TUNNEL / PRODUCTION แถบนี้จะหายไป และเว็บจะใช้ LINE login จริง
-
-## หน้าจอ
-
-**ผู้จอง** `/` จองคิว · `/ticket/:code` e-ticket (รองรับ `?action=confirm|cancel` จากลิงก์เตือนใน LINE) · `/my` การจองของฉัน · `/people` รายชื่อผู้รับบริการ
-
-**เจ้าหน้าที่** `/staff/queue` คิวรายวัน + ช่องเช็กอิน + walk-in / จองแทน (อัปเดตทุก 20 วิ) · `/staff/room` ห้องนวด (เริ่ม/จบ + จับเวลา + บันทึกผล + ประวัติครั้งก่อน) · `/staff/admin` (วันที่ 3)
+หน้าผู้จองไม่มีแถบทดสอบลอยอยู่ — ถ้ายังไม่ได้เลือกผู้ใช้จำลองจะแสดง "ระบบจองคิวออนไลน์ยังไม่เปิดใช้งาน"
+นักพัฒนาเลือกผู้ใช้ได้ที่ **/admin › นักพัฒนา › ผู้ใช้จำลอง › เปิดหน้าผู้จอง** (เก็บใน browser เครื่องนั้นเท่านั้น)
 
 ## Build
 

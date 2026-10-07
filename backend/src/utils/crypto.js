@@ -1,3 +1,6 @@
+/**
+ * utils/crypto.js — เข้ารหัสค่าลับ (AES-256-GCM ด้วย APP_SECRET_KEY) + สุ่มรหัสจอง 6 ตัว
+ */
 import crypto from 'node:crypto';
 import { config } from '../config.js';
 

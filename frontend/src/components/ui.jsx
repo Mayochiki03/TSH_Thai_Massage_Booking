@@ -1,3 +1,12 @@
+/**
+ * components/ui.jsx — ชิ้นส่วน UI กลางที่ใช้ทั้งระบบ (ผู้จอง / เจ้าหน้าที่ / แอดมิน / kiosk)
+ *
+ *  Button, Field, Input, Textarea, Select, Switch   ฟอร์ม
+ *  StatusBadge                                      ป้ายสถานะคิว (สี + ข้อความเสมอ)
+ *  Sheet, ConfirmProvider/useConfirm                หน้าต่างลอย / หน้าต่างยืนยัน
+ *  ToastProvider/useToast                           แจ้งผลการทำรายการ
+ *  Card, PageHeader, Segmented, Empty, Spinner      โครงหน้า
+ */
 import { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
 import { Loader2, X, CircleCheck, CircleAlert, Info } from 'lucide-react';
 import { STATUS } from '../lib/format.js';
@@ -196,6 +205,94 @@ export function Empty({ icon: Icon, title, children, action }) {
       <p className="font-display text-lg font-medium">{title}</p>
       {children && <p className="mt-1 max-w-xs text-[15px] text-muted">{children}</p>}
       {action && <div className="mt-5">{action}</div>}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------
+// Select (dropdown ของ browser — ใช้งานได้ดีทั้งมือถือและจอสัมผัส)
+// ---------------------------------------------------------------------
+export function Select({ className, children, ...rest }) {
+  return (
+    <select {...rest} className={cx(inputCls, 'appearance-none bg-[length:16px] bg-[right_14px_center] bg-no-repeat pr-10', className)}
+      style={{ backgroundImage: "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%236b645a' stroke-width='2'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E\")" }}>
+      {children}
+    </select>
+  );
+}
+
+// ---------------------------------------------------------------------
+// Switch เปิด/ปิด
+// ---------------------------------------------------------------------
+export function Switch({ checked, onChange, label, description, disabled }) {
+  return (
+    <label className={cx('flex cursor-pointer items-start justify-between gap-4', disabled && 'cursor-not-allowed opacity-60')}>
+      <span className="min-w-0">
+        <span className="block font-medium">{label}</span>
+        {description && <span className="block text-[15px] text-muted">{description}</span>}
+      </span>
+      <span className="relative mt-0.5 inline-flex shrink-0">
+        <input type="checkbox" role="switch" className="peer sr-only" checked={!!checked} disabled={disabled} onChange={(e) => onChange(e.target.checked)} />
+        <span className="h-7 w-12 rounded-full bg-line transition-colors peer-checked:bg-herb peer-focus-visible:ring-4 peer-focus-visible:ring-leaf" />
+        <span className="absolute top-1 left-1 size-5 rounded-full bg-white shadow transition-transform peer-checked:translate-x-5" />
+      </span>
+    </label>
+  );
+}
+
+// ---------------------------------------------------------------------
+// Segmented control — เลือก 1 จากตัวเลือกไม่กี่อัน (เช่น แท็บ / โหมด)
+// ---------------------------------------------------------------------
+export function Segmented({ value, onChange, options, className }) {
+  return (
+    <div className={cx('inline-flex flex-wrap gap-1 rounded-xl bg-sand p-1', className)} role="tablist">
+      {options.map((o) => (
+        <button
+          key={o.value}
+          type="button"
+          role="tab"
+          aria-selected={value === o.value}
+          onClick={() => onChange(o.value)}
+          className={cx('h-9 rounded-lg px-3.5 font-display text-[15px] font-medium transition-colors',
+            value === o.value ? 'bg-paper text-herb shadow-sm' : 'text-muted hover:text-ink')}
+        >
+          {o.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------
+// โครงหน้า
+// ---------------------------------------------------------------------
+/** กล่องเนื้อหาพื้นขาว */
+export function Card({ title, description, actions, children, className, bodyClassName }) {
+  return (
+    <section className={cx('rounded-2xl border border-line bg-paper', className)}>
+      {(title || actions) && (
+        <header className="flex flex-wrap items-start justify-between gap-3 border-b border-line px-5 py-4">
+          <div className="min-w-0">
+            {title && <h2 className="text-lg font-semibold">{title}</h2>}
+            {description && <p className="text-[15px] text-muted">{description}</p>}
+          </div>
+          {actions && <div className="flex flex-wrap gap-2">{actions}</div>}
+        </header>
+      )}
+      <div className={cx('p-5', bodyClassName)}>{children}</div>
+    </section>
+  );
+}
+
+/** หัวหน้าแต่ละหน้า (ชื่อหน้า + คำอธิบาย + ปุ่มด้านขวา) */
+export function PageHeader({ title, description, actions }) {
+  return (
+    <div className="mb-6 flex flex-wrap items-end justify-between gap-4">
+      <div className="min-w-0">
+        <h1 className="text-[26px] font-semibold sm:text-[28px]">{title}</h1>
+        {description && <p className="mt-1 text-muted">{description}</p>}
+      </div>
+      {actions && <div className="flex flex-wrap gap-2">{actions}</div>}
     </div>
   );
 }

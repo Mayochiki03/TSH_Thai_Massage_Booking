@@ -1,3 +1,9 @@
+/**
+ * services/notify.js — ส่งแจ้งเตือนทาง LINE ตาม template ใน notification_templates
+ *   - ส่งไปที่ LINE ของ "ผู้จอง" (ไม่ใช่ผู้รับบริการ) / คิวที่ไม่มี LINE จะไม่ส่ง
+ *   - ส่งครั้งเดียวต่อ (คิว, ชนิด) — กันส่งซ้ำด้วย notification_logs
+ *   - โหมด LOCAL ไม่ส่งจริง พิมพ์ข้อความลง console และบันทึกเป็น SKIPPED
+ */
 import { query, queryOne } from '../db.js';
 import { lineConfig, pushMessages, patientUrl } from './line.js';
 import { thaiDate, hhmm, fillTemplate } from '../utils/format.js';

@@ -1,3 +1,9 @@
+/**
+ * routes/public.js — API ผู้จองผ่าน LINE (/api/public/*, พอร์ต public)
+ *   config (ไม่ต้องล็อกอิน) · me / consent / self / patients (ข้อมูลผู้จอง + รายชื่อคนที่จองให้)
+ *   availability · bookings (จอง / ดูตั๋ว / ยืนยัน / ยกเลิก / ส่งตั๋วเข้าแชท)
+ * ผู้จองเห็นและแก้ได้เฉพาะคิวที่ตัวเองจอง และผู้รับบริการที่อยู่ในรายชื่อของตัวเองเท่านั้น
+ */
 import { Router } from 'express';
 import { z } from 'zod';
 import { query, queryOne, withTx } from '../db.js';
