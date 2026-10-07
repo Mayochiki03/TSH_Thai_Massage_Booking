@@ -4,7 +4,7 @@
 ผู้ป่วยจองเองผ่าน **LINE OA** หรือที่ **เครื่อง kiosk หน้าคลินิก** ได้ **e-ticket รหัสจอง 6 ตัว** ไว้เช็กอิน
 เจ้าหน้าที่ดูคิวและเช็กอินที่เคาน์เตอร์ หมอนวดบันทึกผลการรักษา และผู้ดูแลตั้งค่าทุกอย่างได้จากหน้าเว็บ
 
-> สถานะ: **v0.3.1 (กำลังพัฒนา)** ใช้งานได้ครบในโหมดทดสอบ (LOCAL) เหลือเชื่อม LINE จริงผ่าน Cloudflare Tunnel — ดู [CHANGELOG](CHANGELOG.md)
+> สถานะ: **v0.4.0 (กำลังพัฒนา)** ใช้งานได้ครบในโหมดทดสอบ (LOCAL) เหลือเชื่อม LINE จริงผ่าน Cloudflare Tunnel — ดู [CHANGELOG](CHANGELOG.md)
 
 ---
 
@@ -54,14 +54,15 @@
 ```
               อินเทอร์เน็ต                                  │                LAN โรงพยาบาล
                                                             │
- LINE OA ─► LIFF (มือถือผู้ป่วย) ─► Cloudflare Tunnel ──────┼─► :4000  PUBLIC API   (/api/public)
+ LINE OA ─► LIFF (มือถือผู้ป่วย) ─► Cloudflare Tunnel ──────┼─► :4000  PUBLIC   หน้าผู้จอง + /api/public
                                                             │
-       เคาน์เตอร์ / ห้องนวด / ผู้ดูแล / เครื่อง kiosk ───────┼─► :4001  INTERNAL API (/api/staff, admin, dev, kiosk)
+       เคาน์เตอร์ / ห้องนวด / ผู้ดูแล / เครื่อง kiosk ───────┼─► :4001  INTERNAL ทุกหน้า + /api/staff, admin, dev, kiosk
                                                             │                │
                                                             │             MySQL 8
 ```
 
-- Backend แยก 2 พอร์ต — API ฝั่งเจ้าหน้าที่ไม่มีอยู่บนพอร์ตที่ออกอินเทอร์เน็ต
+- Backend แยก 2 พอร์ต — หน้าเว็บและ API ฝั่งเจ้าหน้าที่ไม่มีอยู่บนพอร์ตที่ออกอินเทอร์เน็ต
+- ตอนใช้งานจริง backend ส่งหน้าเว็บเอง (`frontend/dist`) ไม่ต้องเปิด Vite: พอร์ต 4000 ส่งเฉพาะหน้าผู้จอง (`/admin` `/staff` `/kiosk` → 404)
 - Cloudflare Tunnel: ไม่ต้องเปิดพอร์ตไฟร์วอลล์ และไม่เปิดเผย public IP ของโรงพยาบาล
 
 | ส่วน | ใช้ |
@@ -105,6 +106,22 @@ npm install
 npm run dev
 ```
 
+### รันแบบใช้งานจริง (ไม่ใช้ Vite)
+
+```powershell
+cd frontend
+npm run build      # สร้าง frontend/dist (ทำใหม่ทุกครั้งที่แก้โค้ดหน้าเว็บ)
+cd ..\backend
+npm start          # เปิด backend ตัวเดียว ส่งทั้ง API และหน้าเว็บ
+```
+
+| เปิดที่ | ได้อะไร |
+|---|---|
+| http://localhost:4000 | หน้าผู้จองเท่านั้น (พอร์ตนี้จะต่อกับ Cloudflare Tunnel) |
+| http://localhost:4001/admin · `/staff` · `/kiosk` | หน้าเจ้าหน้าที่ (เครื่องอื่นใน LAN ใช้ `http://<IP เครื่อง server>:4001`) |
+
+> ระหว่างเขียนโค้ดใช้ `npm run dev` + Vite :5173 ตามเดิม — ถ้ามี `frontend/dist` อยู่ backend ก็ส่งหน้าเว็บที่ :4000/:4001 ด้วย แต่เป็นเวอร์ชันตอน build ล่าสุด
+
 > อัปเกรดจาก v0.2 โดยไม่ล้างข้อมูล: `mysql ... -e "source migrations/001_roles_kiosk.sql"` (ในโฟลเดอร์ database)
 
 ### บัญชีทดสอบ (dev) — รหัสผ่าน `admin1234` ทุกบัญชี
@@ -140,6 +157,7 @@ npm run dev
 - [x] หน้าเคาน์เตอร์ + ห้องนวด
 - [x] หน้าผู้ดูแล + Dashboard + เมนูนักพัฒนา
 - [x] Kiosk walk-in / เช็กอินเอง
+- [x] Backend ส่งหน้าเว็บเอง แยกพอร์ต public / LAN
 - [ ] เชื่อม LINE จริง (LIFF + Messaging API) ผ่าน Cloudflare Tunnel
 - [ ] ทดลองใช้กับหัวหน้า/เจ้าหน้าที่ + ปรับตาม feedback
 - [ ] ติดตั้งบน server โรงพยาบาล + backup อัตโนมัติ

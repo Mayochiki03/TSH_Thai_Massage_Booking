@@ -10,6 +10,22 @@
 
 ---
 
+## [0.4.0] - 2026-10-07
+
+### เพิ่ม
+- **Backend ส่งหน้าเว็บเอง** (`backend/src/web.js`) — ใช้งานจริงไม่ต้องเปิด Vite: `npm run build` ที่ frontend แล้ว `npm start` ที่ backend
+  - พอร์ต 4000 (ออกเน็ต): เฉพาะหน้าผู้จอง `/` `/ticket/:code` `/my` `/people` — `/admin` `/staff` `/kiosk` และ URL อื่นตอบ 404
+  - พอร์ต 4000 ส่งเฉพาะไฟล์ JS ของหน้าผู้จอง (อ่านจาก Vite manifest) ไฟล์โค้ดหน้าแอดมิน/หน้างาน/kiosk ขอทางพอร์ตนี้ไม่ได้
+  - พอร์ต 4001 (LAN): ทุกหน้า + `/api/public` (เปิดหน้าผู้จองในวง LAN เพื่อทดสอบผู้ใช้จำลองได้)
+  - Content-Security-Policy สำหรับหน้าเว็บ (อนุญาต LINE เฉพาะที่ LIFF ต้องใช้), cache ไฟล์ที่มี hash 1 ปี, `index.html` ไม่ cache
+- `npm run build:web` ในโฟลเดอร์ backend, ค่า `FRONTEND_DIST` ใน `.env` (ไม่ใส่ก็ได้)
+
+### เปลี่ยน
+- Vite build สร้าง `dist/.vite/manifest.json` (`build.manifest: true`)
+- rate limit พอร์ต public: API ผู้จอง 120 ครั้ง/นาที (เท่าเดิม) + ทั้งพอร์ตรวมไฟล์หน้าเว็บ 600 ครั้ง/นาที
+
+---
+
 ## [0.3.1] - 2026-10-07
 
 ### เพิ่ม

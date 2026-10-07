@@ -22,6 +22,7 @@ import { adminRouter } from './routes/admin.js';
 import { devRouter } from './routes/dev.js';
 import { kioskRouter } from './routes/kiosk.js';
 import { startCron } from './jobs/cron.js';
+import { mountPatientWeb, mountFullWeb } from './web.js';
 
 function baseApp() {
   const app = express();
@@ -35,15 +36,24 @@ function baseApp() {
 // =====================================================================
 // PUBLIC — หน้าจอง + API ผู้จอง (ส่งออกอินเทอร์เน็ตผ่าน Cloudflare Tunnel)
 // =====================================================================
-const publicApp = baseApp();
-publicApp.use(rateLimit({
+/** จำกัดจำนวน request ต่อ IP (หลัง Cloudflare ใช้ IP จริงจาก header cf-connecting-ip) */
+const publicApiLimiter = rateLimit({
   windowMs: 60_000, limit: 120, standardHeaders: true, legacyHeaders: false,
   keyGenerator: (req) => req.headers['cf-connecting-ip'] || req.ip,
   message: { error: { code: 'RATE_LIMIT', message: 'ใช้งานถี่เกินไป กรุณารอสักครู่' } },
+});
+const apiNotFound = (_req, res) => res.status(404).json({ error: { code: 'NOT_FOUND', message: 'ไม่พบ API' } });
+
+const publicApp = baseApp();
+// กันยิงถี่ทั้งพอร์ต (รวมไฟล์หน้าเว็บ) — เปิดหน้าหนึ่งครั้งโหลดไฟล์ราว 10 ไฟล์
+publicApp.use(rateLimit({
+  windowMs: 60_000, limit: 600, standardHeaders: true, legacyHeaders: false,
+  keyGenerator: (req) => req.headers['cf-connecting-ip'] || req.ip,
 }));
 publicApp.get('/health', (_req, res) => res.json({ ok: true, service: 'public' }));
-publicApp.use('/api/public', publicRouter);
-publicApp.use('/api', (_req, res) => res.status(404).json({ error: { code: 'NOT_FOUND', message: 'ไม่พบ API' } }));
+publicApp.use('/api/public', publicApiLimiter, publicRouter);
+publicApp.use('/api', apiNotFound);
+const publicWeb = mountPatientWeb(publicApp); // หน้าผู้จองเท่านั้น (อย่างอื่น 404)
 publicApp.use(errorHandler);
 
 // =====================================================================
@@ -61,7 +71,10 @@ internalApp.use('/api/practitioner', requireStaff, requirePasswordChanged, pract
 internalApp.use('/api/admin', requireStaff, requirePasswordChanged, adminRouter);
 internalApp.use('/api/dev', requireStaff, requirePasswordChanged, devRouter);
 internalApp.use('/api/kiosk', requireStaff, requirePasswordChanged, kioskRouter);
-internalApp.use('/api', (_req, res) => res.status(404).json({ error: { code: 'NOT_FOUND', message: 'ไม่พบ API' } }));
+// API ผู้จองบนพอร์ตนี้ด้วย → เปิดหน้าผู้จองใน LAN เพื่อทดสอบผู้ใช้จำลองได้ (origin เดียวกับหน้าแอดมิน)
+internalApp.use('/api/public', publicApiLimiter, publicRouter);
+internalApp.use('/api', apiNotFound);
+mountFullWeb(internalApp); // ทุกหน้า
 internalApp.use(errorHandler);
 
 // =====================================================================
@@ -73,6 +86,8 @@ async function main() {
   internalApp.listen(config.internalPort, config.internalHost, () => {
     console.log(`[internal] http://${config.internalHost}:${config.internalPort}  (แอดมิน/เจ้าหน้าที่ — LAN เท่านั้น)`);
   });
+  if (publicWeb) console.log(`[web]      ส่งหน้าเว็บจาก ${config.frontendDist}`);
+  else console.log('[web]      ยังไม่มี frontend/dist (ยังไม่ได้ build) — ใช้ Vite :5173 ระหว่างพัฒนา');
   if (config.enableCron) startCron();
 }
 

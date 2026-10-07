@@ -6,10 +6,24 @@ Node.js 20+ · Express · MySQL 8 · ไม่ใช้ Docker
 
 | พอร์ต | ใช้กับ | เปิดให้ใคร |
 |---|---|---|
-| **4000** public | หน้าจอง + `/api/public/*` | อินเทอร์เน็ต (ผ่าน Cloudflare Tunnel) — ฟังแค่ `127.0.0.1` |
-| **4001** internal | `/api/auth` `/api/staff` `/api/practitioner` `/api/admin` `/api/dev` `/api/kiosk` | LAN เท่านั้น |
+| **4000** public | หน้าผู้จอง + `/api/public/*` | อินเทอร์เน็ต (ผ่าน Cloudflare Tunnel) — ฟังแค่ `127.0.0.1` |
+| **4001** internal | ทุกหน้า (`/admin` `/staff` `/kiosk` + หน้าผู้จองสำหรับทดสอบ) + `/api/auth` `/api/staff` `/api/practitioner` `/api/admin` `/api/dev` `/api/kiosk` `/api/public` | LAN เท่านั้น |
 
-API ของแอดมิน/เจ้าหน้าที่ **ไม่มีอยู่บนพอร์ต public เลย** ต่อให้คนนอกเข้าเว็บจองได้ ก็เรียก API แอดมินไม่ได้
+หน้าเว็บและ API ของแอดมิน/เจ้าหน้าที่ **ไม่มีอยู่บนพอร์ต public เลย** ต่อให้คนนอกเข้าเว็บจองได้ ก็เปิดหน้าแอดมินหรือเรียก API แอดมินไม่ได้
+
+## ส่งหน้าเว็บ (`src/web.js`)
+
+ถ้ามี `frontend/dist` (ได้จาก `npm run build` ในโฟลเดอร์ frontend หรือ `npm run build:web` ในโฟลเดอร์นี้) backend จะส่งหน้าเว็บเอง ไม่ต้องเปิด Vite
+
+| พอร์ต | URL ที่ส่ง | ไฟล์ JS ที่ส่ง |
+|---|---|---|
+| 4000 | `/` `/ticket/:code` `/my` `/people` เท่านั้น อย่างอื่น 404 | เฉพาะไฟล์ของหน้าผู้จอง (คำนวณจาก `dist/.vite/manifest.json`) — ไฟล์โค้ดหน้าแอดมิน/kiosk ขอไม่ได้ |
+| 4001 | ทุกหน้า | ทุกไฟล์ |
+
+- ไฟล์ใน `/assets` มี hash ในชื่อ → cache 1 ปี, `index.html` → `no-cache` (build ใหม่แล้วเห็นผลทันที)
+- CSP: โหลด script/style/font จากเครื่องตัวเองเท่านั้น, อนุญาตเชื่อมต่อ `*.line.me` และรูปจาก `*.line-scdn.net` (LIFF)
+- ใช้โฟลเดอร์อื่นได้ด้วย `FRONTEND_DIST` ใน `.env`
+- ไม่มี `dist` → ข้ามไป (console บอก) ใช้ Vite :5173 ระหว่างพัฒนาได้ตามเดิม
 
 ## ติดตั้ง (Windows / PowerShell)
 
@@ -22,6 +36,7 @@ npm run dev
 
 ควรเห็น:
 ```
+[web]      ส่งหน้าเว็บจาก ...\frontend\dist   (หรือ "ยังไม่มี frontend/dist" ถ้ายังไม่ได้ build)
 [cron] started
 [public]   http://127.0.0.1:4000  (หน้าจอง — ออกเน็ตผ่าน tunnel)
 [internal] http://0.0.0.0:4001  (แอดมิน/เจ้าหน้าที่ — LAN เท่านั้น)
@@ -47,6 +62,7 @@ npm run dev
 ```
 src/
   index.js              เปิด 2 พอร์ต + cron
+  web.js                ส่งหน้าเว็บ (frontend/dist) แยกตามพอร์ต
   config.js  db.js      env / MySQL pool (time_zone +07:00)
   middleware/auth.js    ล็อกอินเจ้าหน้าที่ (JWT httpOnly cookie) / LINE ID token / ผู้ใช้จำลอง
   routes/

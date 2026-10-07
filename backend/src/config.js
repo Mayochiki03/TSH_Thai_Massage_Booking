@@ -3,6 +3,8 @@
  * ถ้าขาดค่าหรือใช้ค่าตัวอย่างบน production เซิร์ฟเวอร์จะไม่ยอมเปิด (กันลืมเปลี่ยน secret)
  */
 import 'dotenv/config';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 function required(name) {
   const v = process.env[name];
@@ -26,6 +28,8 @@ export const config = {
   internalPort: Number(process.env.INTERNAL_PORT || 4001),
   jwtSecret: required('JWT_SECRET'),
   appSecretKey: required('APP_SECRET_KEY'),
+  // โฟลเดอร์หน้าเว็บที่ build แล้ว (ค่าเริ่มต้น: ../frontend/dist ข้างโฟลเดอร์ backend)
+  frontendDist: path.resolve(process.env.FRONTEND_DIST || fileURLToPath(new URL('../../frontend/dist', import.meta.url))),
   enableCron: (process.env.ENABLE_CRON ?? 'true') === 'true',
 };
 
