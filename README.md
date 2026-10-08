@@ -125,6 +125,9 @@ npm start          # เปิด backend ตัวเดียว ส่งท�
 > อัปเกรดโดยไม่ล้างข้อมูล (รันในโฟลเดอร์ database ตามลำดับที่ยังไม่เคยรัน):
 > - v0.2 → v0.3: `mysql -u root -p -e "source migrations/001_roles_kiosk.sql"`
 > - v0.5 → v0.6: `mysql -u root -p -e "source migrations/002_beds_services_nid.sql"` (หลายเตียง, ประเภทบริการ, เลขบัตร, หมอนวด, VN) — **สำรองฐานข้อมูลก่อน**
+> - v0.6.0 → v0.6.1: `mysql -u root -p -e "source migrations/003_show_price.sql"` (สวิตช์แสดงราคา)
+>
+> ถ้าพิมพ์ `mysql` แล้วขึ้น "not recognized" ให้ใช้ที่อยู่เต็ม: `& "C:\Program Files\MySQL\MySQL Server 8.0\bin\mysql.exe" -u root -p ...`
 
 ### บัญชีทดสอบ (dev) — รหัสผ่าน `admin1234` ทุกบัญชี
 

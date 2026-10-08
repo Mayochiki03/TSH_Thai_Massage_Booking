@@ -27,7 +27,7 @@ import { useNavigate } from 'react-router';
 import { CalendarPlus, ScanLine, ChevronLeft, Delete, Check, Hand, CircleAlert, Home, LayoutDashboard, LockKeyhole } from 'lucide-react';
 import { staffApi } from '../../lib/api.js';
 import { SessionGate, useSession, homeFor } from '../../lib/session.jsx';
-import { relativeDay, weekdayShort, dayNum, monthShort, thaiDateLong, todayYmd, baht } from '../../lib/format.js';
+import { relativeDay, weekdayShort, dayNum, monthShort, thaiDateLong, todayYmd, baht, serviceLabel } from '../../lib/format.js';
 import { formatThaiId, thaiIdError } from '../../lib/thaiId.js';
 import { CompressMark } from '../../components/Logo.jsx';
 import { cx } from '../../components/ui.jsx';
@@ -525,7 +525,7 @@ function BookFlow({ onHome, services }) {
               <div><dt className="text-muted">วันและเวลา</dt><dd className="font-display text-[1.3em] font-semibold">{relativeDay(date) ?? thaiDateLong(date)} {slot.start_time}–{slot.end_time} น.</dd></div>
               <div><dt className="text-muted">ผู้รับบริการ</dt><dd className="font-display text-[1.3em] font-semibold">{person.new ? `${person.first_name} ${person.last_name}` : person.name}</dd></div>
               <div><dt className="text-muted">เบอร์โทร</dt><dd className="text-[1.1em]">{fmtPhone(phone)}</dd></div>
-              {service && <div><dt className="text-muted">บริการ</dt><dd className="font-display text-[1.2em] font-semibold">{service.name} · {baht(service.price)}</dd></div>}
+              {service && <div><dt className="text-muted">บริการ</dt><dd className="font-display text-[1.2em] font-semibold">{serviceLabel(service)}</dd></div>}
             </dl>
             <div>
               {services.length > 1 && (
@@ -538,7 +538,7 @@ function BookFlow({ onHome, services }) {
                         <button key={x.service_type_id} type="button" aria-pressed={on} onClick={() => setServiceId(x.service_type_id)}
                           className={cx('flex items-center justify-between gap-[0.6em] rounded-[0.8em] border-2 px-[1em] py-[0.6em] text-left', on ? 'border-herb bg-leaf-soft' : 'border-line bg-paper')}>
                           <span className="font-display text-[1.15em] font-semibold">{on && <Check className="mr-[0.3em] inline size-[0.9em] text-herb" aria-hidden />}{x.name}</span>
-                          <span className="shrink-0 font-display text-[1.15em] font-semibold text-herb">{baht(x.price)}</span>
+                          {x.price != null && <span className="shrink-0 font-display text-[1.15em] font-semibold text-herb">{baht(x.price)}</span>}
                         </button>
                       );
                     })}

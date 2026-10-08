@@ -12,7 +12,7 @@ import { z } from 'zod';
 import { query, queryOne, withTx } from '../db.js';
 import { ah, forbidden, notFound, conflict } from '../utils/errors.js';
 import { requireLineUser, requireConsent } from '../middleware/auth.js';
-import { getSettings } from '../services/settings.js';
+import { getSettings, getSetting } from '../services/settings.js';
 import { lineConfig } from '../services/line.js';
 import { findOrCreatePatient, applyNationalId } from '../services/patients.js';
 import { hashThaiId, maskThaiId } from '../utils/nationalId.js';
@@ -27,7 +27,7 @@ export const publicRouter = Router();
 // ค่าที่หน้าเว็บต้องใช้ก่อนล็อกอิน
 // ---------------------------------------------------------------------
 publicRouter.get('/config', ah(async (req, res) => {
-  const s = await getSettings(['clinic_name', 'counter_phone', 'advance_booking_days', 'patient_cancel_min', 'allow_same_day']);
+  const s = await getSettings(['clinic_name', 'counter_phone', 'advance_booking_days', 'patient_cancel_min', 'allow_same_day', 'show_price']);
   const [c, serviceTypes] = await Promise.all([lineConfig(), booking.listServiceTypes()]);
   res.json({
     clinic_name: s.clinic_name,
@@ -35,7 +35,9 @@ publicRouter.get('/config', ah(async (req, res) => {
     advance_booking_days: s.advance_booking_days,
     allow_same_day: s.allow_same_day,
     patient_cancel_min: s.patient_cancel_min,
-    service_types: serviceTypes,
+    // ปิด "แสดงราคา" → ตัดราคาออกตั้งแต่ backend (หน้าเว็บไม่ได้รับราคาเลย ไม่ใช่แค่ซ่อน)
+    show_price: s.show_price,
+    service_types: booking.publicServiceTypes(serviceTypes, s.show_price),
     mode: c.mode,
     liff_id: c.liffId,
     // แสดงลิงก์ "สำหรับเจ้าหน้าที่" เฉพาะเมื่อเปิดจากพอร์ต LAN (คนนอกที่เข้าผ่าน tunnel ไม่เห็น)
@@ -204,7 +206,7 @@ publicRouter.post('/bookings', requireConsent, ah(async (req, res) => {
     channel: 'ONLINE', lineUserId: uid, relation: link.relation,
   });
   await audit(req, 'BOOK', 'appointments', appt.appointment_id, { code: appt.booking_code });
-  res.status(201).json(toTicket(appt));
+  res.status(201).json(toTicket(appt, await getSetting('show_price')));
 }));
 
 publicRouter.get('/bookings', ah(async (req, res) => {
@@ -219,7 +221,8 @@ publicRouter.get('/bookings', ah(async (req, res) => {
       LIMIT 50`,
     [req.lineUser.line_user_id],
   );
-  res.json({ bookings: rows.map(toTicket) });
+  const showPrice = await getSetting('show_price');
+  res.json({ bookings: rows.map((r) => toTicket(r, showPrice)) });
 }));
 
 async function myAppointment(req) {
@@ -234,7 +237,7 @@ publicRouter.get('/bookings/:code', ah(async (req, res) => {
   const r = await booking.bookingRules();
   const t = await booking.timing(appt.appointment_id);
   res.json({
-    ...toTicket(appt),
+    ...toTicket(appt, await getSetting('show_price')),
     can_cancel: appt.status === 'BOOKED' && t.mins_until >= r.patient_cancel_min,
     can_confirm: appt.status === 'BOOKED' && !appt.confirmed_at && t.mins_until > 0,
   });
@@ -244,13 +247,13 @@ publicRouter.post('/bookings/:code/cancel', ah(async (req, res) => {
   const appt = await myAppointment(req);
   await booking.cancelByPatient(appt, req.lineUser.line_user_id);
   await audit(req, 'CANCEL', 'appointments', appt.appointment_id);
-  res.json(toTicket(await booking.getAppointment(appt.appointment_id)));
+  res.json(toTicket(await booking.getAppointment(appt.appointment_id), await getSetting('show_price')));
 }));
 
 publicRouter.post('/bookings/:code/confirm', ah(async (req, res) => {
   const appt = await myAppointment(req);
   await booking.confirmByPatient(appt, req.lineUser.line_user_id);
-  res.json(toTicket(await booking.getAppointment(appt.appointment_id)));
+  res.json(toTicket(await booking.getAppointment(appt.appointment_id), await getSetting('show_price')));
 }));
 
 /** หน้าเว็บส่งตั๋วเข้าแชทด้วย liff.sendMessages() สำเร็จ → บันทึกไว้ (ไม่กินโควตา push) */
@@ -270,7 +273,8 @@ publicRouter.post('/bookings/:code/push-ticket', ah(async (req, res) => {
   res.json(await notifyAppointment('BOOKED', appt.appointment_id));
 }));
 
-function toTicket(a) {
+/** ข้อมูลตั๋วของผู้จอง — showPrice = false → ไม่ส่งราคา */
+function toTicket(a, showPrice) {
   return {
     booking_code: a.booking_code,
     status: a.status,
@@ -280,7 +284,7 @@ function toTicket(a) {
     patient: { patient_id: a.patient_id, first_name: a.first_name, last_name: a.last_name, hn: a.hn },
     relation: a.booker_relation,
     chief_complaint: a.chief_complaint,
-    service: a.service_type_id ? { name: a.service_name, price: a.service_price == null ? null : Number(a.service_price) } : null,
+    service: a.service_type_id ? { name: a.service_name, price: showPrice && a.service_price != null ? Number(a.service_price) : null } : null,
     confirmed: !!a.confirmed_at,
     cancel_reason: a.cancel_reason,
     created_at: a.created_at,

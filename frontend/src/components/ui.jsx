@@ -99,14 +99,20 @@ export function Spinner({ label = 'กำลังโหลด' }) {
 // ---------------------------------------------------------------------
 export function Sheet({ open, onClose, title, children, footer, wide }) {
   const ref = useRef(null);
+  // เก็บ onClose ล่าสุดไว้ใน ref — ห้ามใส่ onClose ใน deps ของ effect ด้านล่าง
+  // (หน้าที่เรียกมักส่ง arrow function ใหม่ทุกครั้งที่ render → effect รันใหม่ทุกครั้งที่พิมพ์
+  //  → ย้าย focus ไปปุ่ม X ทำให้พิมพ์ได้ทีละตัว — บั๊กที่เจอใน v0.6.0)
+  const closeRef = useRef(onClose);
+  closeRef.current = onClose;
   useEffect(() => {
     if (!open) return;
-    const onKey = (e) => e.key === 'Escape' && onClose?.();
+    const onKey = (e) => e.key === 'Escape' && closeRef.current?.();
     document.addEventListener('keydown', onKey);
     document.body.style.overflow = 'hidden';
+    // focus ครั้งเดียวตอนเปิด (ปุ่มปิด) — ไม่ focus ช่องกรอกเอง เพื่อไม่ให้คีย์บอร์ดมือถือเด้งขึ้นทันที
     ref.current?.querySelector('input,textarea,select,button')?.focus();
     return () => { document.removeEventListener('keydown', onKey); document.body.style.overflow = ''; };
-  }, [open, onClose]);
+  }, [open]);
   if (!open) return null;
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-center sm:items-center sm:p-6" role="dialog" aria-modal="true" aria-label={title}>

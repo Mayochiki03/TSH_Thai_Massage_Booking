@@ -7,6 +7,7 @@
 import { query, queryOne } from '../db.js';
 import { lineConfig, pushMessages, patientUrl } from './line.js';
 import { thaiDate, hhmm, fillTemplate } from '../utils/format.js';
+import { getSetting } from './settings.js';
 
 /**
  * ส่งแจ้งเตือน 1 ครั้งต่อ (คิว, ชนิด) ไปที่ LINE ของผู้จอง
@@ -30,7 +31,8 @@ export async function notifyAppointment(type, appointmentId, extraVars = {}) {
     time: `${hhmm(a.start_time)}–${hhmm(a.end_time)} น.`,
     code: a.booking_code,
     service: a.service_name ?? '',
-    price: a.service_price == null ? '' : `${Number(a.service_price).toLocaleString('th-TH')} บาท`,
+    // ปิด "แสดงราคา" → {price} เป็นค่าว่าง (และวงเล็บว่าง "()" ถูกตัดทิ้งตอนสร้างข้อความ)
+    price: a.service_price == null || !(await getSetting('show_price')) ? '' : `${Number(a.service_price).toLocaleString('th-TH')} บาท`,
     rebook_url: await patientUrl('/'),
     ...extraVars,
   };
@@ -71,7 +73,8 @@ async function deliver(lineUserId, message, { appointmentId, type }) {
 
 /** สร้าง Flex message: ข้อความจาก template + ปุ่มตามชนิด */
 async function buildMessage(type, tpl, vars, code) {
-  const text = fillTemplate(tpl.body, vars);
+  // ตัดวงเล็บที่ว่างหลังแทนค่า เช่น "นวดแผนไทย ()" เมื่อไม่แสดงราคา
+  const text = fillTemplate(tpl.body, vars).replace(/[ \t]*\(\s*\)/g, '');
   const buttons = [];
   if (type === 'REMIND_2H' && code) {
     buttons.push(button('ยืนยันมาตามนัด', await patientUrl(`/ticket/${code}?action=confirm`), 'primary'));

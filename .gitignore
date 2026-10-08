@@ -30,6 +30,8 @@ backups/
 *.sql.zip
 *.bak
 *_backup.sql
+backup_*.sql
+backup-*.sql
 *_dump.sql
 dump-*.sql
 mysql-data/

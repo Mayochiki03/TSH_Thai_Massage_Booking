@@ -142,7 +142,7 @@ function ticketFlex(t) {
           row('ผู้รับบริการ', `${t.patient.first_name} ${t.patient.last_name}`),
           row('วันที่', thaiDate(t.slot_date)),
           row('เวลา', `${t.start_time}–${t.end_time} น.`),
-          ...(t.service ? [row('บริการ', `${t.service.name} (${Number(t.service.price).toLocaleString('th-TH')} บาท)`)] : []),
+          ...(t.service ? [row('บริการ', t.service.price == null ? t.service.name : `${t.service.name} (${Number(t.service.price).toLocaleString('th-TH')} บาท)`)] : []),
           { type: 'text', text: 'แสดงรหัสนี้ที่เคาน์เตอร์ก่อนเวลานัด 10–15 นาที', size: 'xs', color: '#8A9A91', wrap: true, margin: 'md' },
         ],
       },

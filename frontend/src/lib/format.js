@@ -56,4 +56,10 @@ export const STATUS = {
 export const RELATIONS = ['มารดา', 'บิดา', 'คู่สมรส', 'บุตร', 'ญาติ', 'อื่น ๆ'];
 
 /** 300 → '300 บาท' (ไม่มีทศนิยมถ้าเป็นจำนวนเต็ม) */
+/**
+ * "ชื่อบริการ · 200 บาท" — ถ้าไม่มีราคา (ผู้ดูแลปิด "แสดงราคาให้ผู้รับบริการเห็น" → backend ส่ง price = null)
+ * คืนแค่ชื่อบริการ
+ */
+export const serviceLabel = (sv, sep = ' · ') => (sv ? (sv.price == null ? sv.name : `${sv.name}${sep}${baht(sv.price)}`) : '');
+
 export const baht = (n) => (n == null ? '' : `${Number(n).toLocaleString('th-TH', { maximumFractionDigits: 2 })} บาท`);

@@ -14,7 +14,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router';
 import { Plus, UserRound, CalendarX2, Check, Sparkles } from 'lucide-react';
 import { patientApi } from '../../lib/liff.js';
-import { relativeDay, weekdayShort, dayNum, monthShort, thaiDateLong, baht } from '../../lib/format.js';
+import { relativeDay, weekdayShort, dayNum, monthShort, thaiDateLong, baht, serviceLabel } from '../../lib/format.js';
 import { thaiIdError } from '../../lib/thaiId.js';
 import { Button, Sheet, Spinner, Textarea, Empty, useToast, cx } from '../../components/ui.jsx';
 import { NationalIdField } from '../../components/NationalIdField.jsx';
@@ -214,7 +214,7 @@ export function BookPage() {
                     <span className="block font-medium">{sv.name}</span>
                     {sv.description && <span className="block text-[14px] text-muted">{sv.description}</span>}
                   </span>
-                  <span className="shrink-0 font-display text-[18px] font-semibold text-herb">{baht(sv.price)}</span>
+                  {sv.price != null && <span className="shrink-0 font-display text-[18px] font-semibold text-herb">{baht(sv.price)}</span>}
                 </button>
               );
             })}
@@ -307,7 +307,7 @@ export function BookPage() {
           <dl className="mt-4 space-y-3 text-[16px]">
             <SummaryRow label="วันที่" value={date ? thaiDateLong(date) : null} />
             <SummaryRow label="เวลา" value={slot ? `${slot.start_time}–${slot.end_time} น.` : null} placeholder="ยังไม่ได้เลือก" />
-            <SummaryRow label="บริการ" value={service ? `${service.name} · ${baht(service.price)}` : null} placeholder="ยังไม่ได้เลือก" />
+            <SummaryRow label="บริการ" value={service ? serviceLabel(service) : null} placeholder="ยังไม่ได้เลือก" />
             <SummaryRow label="ผู้รับบริการ" value={person ? `${person.first_name} ${person.last_name}` : null} placeholder="ยังไม่ได้เลือก" />
           </dl>
           {needsId && !idOk && <p className="mt-3 text-[14px] text-clay">กรอกเลขบัตรประชาชนของผู้รับบริการก่อนจอง</p>}
@@ -325,7 +325,7 @@ export function BookPage() {
           <div className="mx-auto flex max-w-[1120px] flex-col gap-2 px-4 pt-3 pb-[max(0.9rem,env(safe-area-inset-bottom))] sm:flex-row sm:items-center sm:justify-between sm:px-6">
             <div className="min-h-6 text-[15px] text-muted">
               {pickedLabel
-                ? <span className="font-medium text-ink">{pickedLabel}{service ? ` · ${baht(service.price)}` : ''}</span>
+                ? <span className="font-medium text-ink">{pickedLabel}{service?.price != null ? ` · ${baht(service.price)}` : ''}</span>
                 : 'ยังไม่ได้เลือกรอบเวลา'}
               {slot && needsId && !idOk && <span className="block text-[14px] text-clay">กรอกเลขบัตรประชาชนของผู้รับบริการก่อนจอง</span>}
             </div>
@@ -344,7 +344,7 @@ export function BookPage() {
           <dl className="divide-y divide-line rounded-2xl border border-line">
             <Row label="วันที่" value={thaiDateLong(date)} />
             <Row label="เวลา" value={`${slot.start_time}–${slot.end_time} น.`} />
-            <Row label="บริการ" value={`${service.name} (${baht(service.price)})`} />
+            <Row label="บริการ" value={serviceLabel(service)} />
             <Row label="ผู้รับบริการ" value={`${person.first_name} ${person.last_name}`} />
             {complaint.trim() && <Row label="อาการ" value={complaint.trim()} />}
           </dl>

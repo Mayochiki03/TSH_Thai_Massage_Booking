@@ -6,6 +6,9 @@
  *  - ประเภทที่เคยถูกจองแล้วลบไม่ได้ → ปิดการใช้งานแทน (ชื่อยังอยู่ในรายงานเก่า)
  *  - ต้องเปิดใช้งานอย่างน้อย 1 ประเภทเสมอ
  *  - ลำดับ (sort_order) น้อย = แสดงก่อน
+ *  - สวิตช์ "แสดงราคาให้ผู้รับบริการเห็น" (setting show_price, ค่าเริ่มต้น = ปิด)
+ *      ปิด → หน้าจอง LINE / kiosk / ตั๋ว / ข้อความ LINE ไม่มีราคา (backend ไม่ส่งราคาออกไปเลย)
+ *      เจ้าหน้าที่ / ผู้ดูแล / รายงาน Excel ยังเห็นราคาเสมอ (ใช้คิดรายได้)
  */
 import { useState } from 'react';
 import { Plus, Pencil, Trash2, Tags, Info } from 'lucide-react';
@@ -23,6 +26,21 @@ export function ServiceTypesPage() {
   const [edit, setEdit] = useState(null); // { id?, ...form }
   const [errors, setErrors] = useState({});
   const [saving, setSaving] = useState(false);
+  const { data: showPrice, setData: setShowPrice } = useLoad(
+    () => staffApi('/admin/settings').then((d) => !!d.settings.find((s) => s.key === 'show_price')?.value),
+    [],
+  );
+
+  const toggleShowPrice = async (v) => {
+    setShowPrice(v);
+    try {
+      await staffApi('/admin/settings', { method: 'PUT', body: { show_price: v } });
+      toast(v ? 'ผู้รับบริการจะเห็นราคาตอนจอง' : 'ซ่อนราคาจากผู้รับบริการแล้ว');
+    } catch (err) {
+      setShowPrice(!v);
+      toast(err.message, 'error');
+    }
+  };
 
   const open = (st) => {
     setErrors({});
@@ -68,6 +86,19 @@ export function ServiceTypesPage() {
         description="ตัวเลือกที่ผู้รับบริการเห็นตอนจอง"
         actions={<Button icon={Plus} onClick={() => open(null)}>เพิ่มบริการ</Button>}
       />
+
+      <Card className="mb-4">
+        {showPrice == null ? <Spinner /> : (
+          <Switch
+            checked={showPrice}
+            onChange={toggleShowPrice}
+            label="แสดงราคาให้ผู้รับบริการเห็น"
+            description={showPrice
+              ? 'เปิดอยู่ — หน้าจอง LINE, kiosk, ตั๋ว และข้อความ LINE แสดงราคา'
+              : 'ปิดอยู่ — ผู้รับบริการเห็นแค่ชื่อบริการ (เจ้าหน้าที่และรายงาน Excel ยังเห็นราคา)'}
+          />
+        )}
+      </Card>
 
       <div className="mb-4 flex gap-3 rounded-2xl bg-turmeric-soft/60 p-4 text-[15px] text-ink">
         <Info className="mt-0.5 size-5 shrink-0 text-clay" aria-hidden />

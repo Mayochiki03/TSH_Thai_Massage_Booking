@@ -19,7 +19,7 @@ import { z } from 'zod';
 import { query, withTx } from '../db.js';
 import { ah, badRequest, conflict, notFound } from '../utils/errors.js';
 import { requireRole } from '../middleware/auth.js';
-import { getSettings } from '../services/settings.js';
+import { getSettings, getSetting } from '../services/settings.js';
 import * as booking from '../services/booking.js';
 import { findOrCreatePatient } from '../services/patients.js';
 import { audit } from '../services/audit.js';
@@ -32,8 +32,8 @@ kioskRouter.use(requireRole('KIOSK'));
 const maskName = (first, last) => `${first} ${String(last).charAt(0)}${'*'.repeat(Math.max(2, Math.min(4, String(last).length - 1)))}`;
 
 kioskRouter.get('/config', ah(async (_req, res) => {
-  const s = await getSettings(['clinic_name', 'counter_phone', 'kiosk_idle_sec', 'checkin_early_min']);
-  res.json({ ...s, service_types: await booking.listServiceTypes() });
+  const s = await getSettings(['clinic_name', 'counter_phone', 'kiosk_idle_sec', 'checkin_early_min', 'show_price']);
+  res.json({ ...s, service_types: booking.publicServiceTypes(await booking.listServiceTypes(), s.show_price) });
 }));
 
 kioskRouter.get('/availability', ah(async (_req, res) => {
@@ -86,7 +86,7 @@ kioskRouter.post('/bookings', ah(async (req, res) => {
     identity: b.patient_id ? { national_id: b.national_id, no_national_id: b.no_national_id } : undefined,
   });
   await audit(req, 'KIOSK_BOOK', 'appointments', a.appointment_id, { code: a.booking_code });
-  res.status(201).json(kioskTicket(a));
+  res.status(201).json(kioskTicket(a, await getSetting('show_price')));
 }));
 
 const checkinBody = z.object({
@@ -114,11 +114,11 @@ kioskRouter.post('/checkin', ah(async (req, res) => {
     throw err;
   }
   await audit(req, 'KIOSK_CHECK_IN', 'appointments', a.appointment_id);
-  res.json(kioskTicket(await booking.getAppointment(a.appointment_id)));
+  res.json(kioskTicket(await booking.getAppointment(a.appointment_id), await getSetting('show_price')));
 }));
 
 /** ข้อมูลตั๋วสำหรับแสดงบน kiosk (ชื่อปิดบัง, ไม่มีเบอร์/HN) */
-function kioskTicket(a) {
+function kioskTicket(a, showPrice) {
   return {
     booking_code: a.booking_code,
     status: a.status,
@@ -126,6 +126,6 @@ function kioskTicket(a) {
     start_time: a.start_time.slice(0, 5),
     end_time: a.end_time.slice(0, 5),
     name: maskName(a.first_name, a.last_name),
-    service: a.service_name ? { name: a.service_name, price: a.service_price == null ? null : Number(a.service_price) } : null,
+    service: a.service_name ? { name: a.service_name, price: showPrice && a.service_price != null ? Number(a.service_price) : null } : null,
   };
 }

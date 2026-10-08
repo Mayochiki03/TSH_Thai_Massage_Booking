@@ -55,6 +55,7 @@ INSERT INTO holidays (holiday_date, name) VALUES
 INSERT INTO settings (setting_key, setting_value, label, category, value_type, sort_order) VALUES
   -- กฎการจอง
   ('bed_count',            '1',         'จำนวนเตียงนวด (รับได้กี่คนต่อรอบ)',                   'BOOKING', 'INT',    0),
+  ('show_price',           '0',         'แสดงราคาให้ผู้รับบริการเห็น (LINE / kiosk / ข้อความแจ้งเตือน)', 'BOOKING', 'BOOL',   0),
   ('max_per_day',          '1',         'จองได้สูงสุดต่อผู้รับบริการต่อวัน (คิว)',              'BOOKING', 'INT',    1),
   ('max_per_week',         '2',         'จองได้สูงสุดต่อผู้รับบริการต่อสัปดาห์ จ.–อา. (คิว)',    'BOOKING', 'INT',    2),
   ('advance_booking_days', '2',         'จองล่วงหน้าได้สูงสุด (วัน)',                         'BOOKING', 'INT',    3),

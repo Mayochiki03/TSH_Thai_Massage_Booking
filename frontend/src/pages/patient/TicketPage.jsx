@@ -142,7 +142,7 @@ export function TicketPage() {
           {t.service && (
             <div>
               <dt className="text-[14px] text-muted">บริการ</dt>
-              <dd className="text-[17px] font-medium">{t.service.name} <span className="font-normal text-muted">· {baht(t.service.price)}</span></dd>
+              <dd className="text-[17px] font-medium">{t.service.name}{t.service.price != null && <span className="font-normal text-muted"> · {baht(t.service.price)}</span>}</dd>
             </div>
           )}
           {t.chief_complaint && (

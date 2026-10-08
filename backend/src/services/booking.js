@@ -22,6 +22,12 @@ const BOOKING_KEYS = [
 
 export const bookingRules = () => getSettings(BOOKING_KEYS);
 
+/**
+ * ประเภทบริการสำหรับหน้าผู้รับบริการ (LINE / kiosk)
+ * ปิด "แสดงราคา" (setting show_price) → ส่ง price = null ไปเลย หน้าเว็บจะไม่แสดงราคา
+ */
+export const publicServiceTypes = (list, showPrice) => (showPrice ? list : list.map((t) => ({ ...t, price: null })));
+
 /** ประเภทบริการที่เปิดให้เลือก (ทุกช่องทางใช้รายการเดียวกัน) */
 export function listServiceTypes() {
   return query(
