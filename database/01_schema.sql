@@ -1,5 +1,5 @@
 -- =====================================================================
--- 01_schema.sql — ระบบจองคิวนวดแผนไทย (สเปก v3)
+-- 01_schema.sql — ระบบจองคิวนวดแผนไทย (สเปก v3 + ปรับ v0.6: หลายเตียง / ประเภทบริการ / เลขบัตร / VN)
 -- MySQL 8.0+ · utf8mb4
 --
 -- หมายเหตุเรื่องเวลา: คอลัมน์ TIMESTAMP เก็บเป็น UTC และแปลงตาม time_zone ของ session
@@ -21,11 +21,21 @@ CREATE TABLE patients (
   first_name      VARCHAR(100) NOT NULL,
   last_name       VARCHAR(100) NOT NULL,
   phone_number    VARCHAR(15)  NOT NULL,
+  -- เลขบัตรประชาชน 13 หลัก (ข้อมูลส่วนบุคคล → ไม่เก็บแบบอ่านได้)
+  --   national_id_enc   เข้ารหัส AES-256-GCM ด้วย APP_SECRET_KEY (ถอดได้เฉพาะ backend: ใช้ตอนแก้ไข/ส่งออก Excel)
+  --   national_id_hash  HMAC-SHA256 ของเลข 13 หลัก → ใช้ค้นหา/กันลงทะเบียนซ้ำ โดยไม่ต้องถอดรหัส
+  --   national_id_last4 4 ตัวท้าย → แสดงแบบปิดบัง x-xxxx-xxxx9-87-6
+  --   no_national_id    ไม่มีบัตรประชาชนไทย (เช่น ชาวต่างชาติ) → ไม่บังคับกรอก
+  national_id_enc   VARCHAR(255) NULL,
+  national_id_hash  CHAR(64)     NULL,
+  national_id_last4 CHAR(4)      NULL,
+  no_national_id    BOOLEAN NOT NULL DEFAULT FALSE,
   note            VARCHAR(255) NULL,
   is_deleted      BOOLEAN NOT NULL DEFAULT FALSE,          -- soft delete
   created_at      TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at      TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   UNIQUE KEY uq_hn (hn),                                    -- NULL ซ้ำกันได้ (บุคคลทั่วไป)
+  UNIQUE KEY uq_national_id (national_id_hash),             -- 1 เลขบัตร = 1 คน
   INDEX idx_phone (phone_number),
   INDEX idx_name (first_name, last_name),
   CONSTRAINT chk_hn_type CHECK (
@@ -92,6 +102,22 @@ CREATE TABLE staff_users (
 );
 
 -- ---------------------------------------------------------------------
+-- ประเภทบริการ (นวดแผนไทย / นวดประคบ ...) — ใช้เวลารอบเท่ากัน ต่างกันที่ราคา
+-- ---------------------------------------------------------------------
+CREATE TABLE service_types (
+  service_type_id INT AUTO_INCREMENT PRIMARY KEY,
+  name            VARCHAR(100)  NOT NULL,
+  description     VARCHAR(255)  NULL,
+  price           DECIMAL(10,2) NOT NULL DEFAULT 0,
+  sort_order      INT NOT NULL DEFAULT 0,
+  is_active       BOOLEAN NOT NULL DEFAULT TRUE,
+  created_at      TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at      TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  UNIQUE KEY uq_service_name (name),
+  CONSTRAINT chk_service_price CHECK (price >= 0)
+);
+
+-- ---------------------------------------------------------------------
 -- รอบเวลา / วันหยุด / slot
 -- ---------------------------------------------------------------------
 -- แม่แบบรอบเวลา (CRUD ในหน้าแอดมิน) — cron ใช้สร้าง time_slots
@@ -113,19 +139,21 @@ CREATE TABLE holidays (
   CONSTRAINT fk_holiday_creator FOREIGN KEY (created_by) REFERENCES staff_users(user_id)
 );
 
+-- 1 แถว = 1 รอบเวลาของคลินิก รับได้ capacity คิวพร้อมกัน (= จำนวนเตียง / หมอนวดที่ว่างในรอบนั้น)
+-- ไม่ผูกกับหมอนวด: หมอนวดคนไหนว่างก็กด "เริ่มนวด" รับคิว แล้วระบบบันทึกไว้ที่ appointments.practitioner_id
 CREATE TABLE time_slots (
   slot_id         BIGINT AUTO_INCREMENT PRIMARY KEY,
-  practitioner_id INT  NOT NULL,
   slot_date       DATE NOT NULL,
   start_time      TIME NOT NULL,
   end_time        TIME NOT NULL,
+  capacity        TINYINT UNSIGNED NOT NULL DEFAULT 1,     -- รับได้กี่คิว (เตียง) ในรอบนี้
   is_blocked      BOOLEAN NOT NULL DEFAULT FALSE,
   block_reason    VARCHAR(255) NULL,
   created_at      TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  UNIQUE KEY uq_slot (practitioner_id, slot_date, start_time),   -- กัน cron สร้างซ้ำ
+  UNIQUE KEY uq_slot (slot_date, start_time),                   -- กัน cron สร้างซ้ำ
   INDEX idx_slot_date (slot_date),
-  CONSTRAINT fk_slot_practitioner FOREIGN KEY (practitioner_id) REFERENCES practitioners(practitioner_id),
-  CONSTRAINT chk_slot_time CHECK (end_time > start_time)
+  CONSTRAINT chk_slot_time CHECK (end_time > start_time),
+  CONSTRAINT chk_slot_capacity CHECK (capacity BETWEEN 1 AND 50)
 );
 
 -- ---------------------------------------------------------------------
@@ -142,10 +170,14 @@ CREATE TABLE appointments (
   -- ONLINE = ผ่าน LINE, WALK_IN = เจ้าหน้าที่รับหน้าเคาน์เตอร์, STAFF = เจ้าหน้าที่จองแทน (โทรศัพท์), KIOSK = จองเองที่เครื่อง kiosk
   booking_channel        ENUM('ONLINE','WALK_IN','STAFF','KIOSK') NOT NULL DEFAULT 'ONLINE',
   chief_complaint        TEXT NULL,
+  service_type_id        INT NULL,                         -- ประเภทบริการที่เลือกตอนจอง
+  service_price          DECIMAL(10,2) NULL,               -- ราคา ณ ตอนจอง (แก้ราคาภายหลังไม่กระทบคิวเก่า)
+  practitioner_id        INT NULL,                         -- หมอนวดที่นวดจริง (บันทึกตอนกดเริ่มนวด)
+  vn                     VARCHAR(20) NULL,                 -- Visit Number ของโรงพยาบาล (ใช้ตอนเบิกจ่าย)
   status                 ENUM('BOOKED','CHECKED_IN','IN_SERVICE','COMPLETED','NO_SHOW','CANCELLED')
                          NOT NULL DEFAULT 'BOOKED',
-  -- กันจองซ้อน: 1 slot มีคิวที่ "ยัง active" ได้แค่ 1 คิว
-  -- คิว CANCELLED / NO_SHOW จะได้ค่า NULL → ปล่อย slot ให้ walk-in จองซ้ำได้
+  -- slot ของคิวที่ "ยังกินที่" (CANCELLED / NO_SHOW = NULL → คืนที่ให้ walk-in)
+  -- ใช้นับว่ารอบนั้นเต็มหรือยัง (เทียบกับ time_slots.capacity) — การกันจองเกินทำใน transaction ที่ล็อกแถว slot
   active_slot_id         BIGINT GENERATED ALWAYS AS
                          (IF(status IN ('CANCELLED','NO_SHOW'), NULL, slot_id)) STORED,
   confirmed_at           TIMESTAMP NULL,                   -- กดยืนยันตอนเตือน 2 ชม.
@@ -157,7 +189,9 @@ CREATE TABLE appointments (
   created_at             TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at             TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   UNIQUE KEY uq_booking_code (booking_code),
-  UNIQUE KEY uq_active_slot (active_slot_id),
+  INDEX idx_active_slot (active_slot_id),
+  INDEX idx_practitioner (practitioner_id),
+  INDEX idx_vn (vn),
   INDEX idx_patient_status (patient_id, status),
   INDEX idx_booker (booked_by_line_user_id),
   INDEX idx_slot (slot_id),
@@ -166,7 +200,9 @@ CREATE TABLE appointments (
   CONSTRAINT fk_appt_booker    FOREIGN KEY (booked_by_line_user_id) REFERENCES line_users(line_user_id),
   CONSTRAINT fk_appt_staff     FOREIGN KEY (booked_by_staff)        REFERENCES staff_users(user_id),
   CONSTRAINT fk_appt_slot      FOREIGN KEY (slot_id)                REFERENCES time_slots(slot_id),
-  CONSTRAINT fk_appt_checkinby FOREIGN KEY (checked_in_by)          REFERENCES staff_users(user_id)
+  CONSTRAINT fk_appt_checkinby FOREIGN KEY (checked_in_by)          REFERENCES staff_users(user_id),
+  CONSTRAINT fk_appt_service   FOREIGN KEY (service_type_id)        REFERENCES service_types(service_type_id),
+  CONSTRAINT fk_appt_practitioner FOREIGN KEY (practitioner_id)     REFERENCES practitioners(practitioner_id)
 );
 
 -- บันทึกการให้บริการ (ลงเวชระเบียน)
@@ -266,30 +302,38 @@ CREATE TABLE audit_logs (
 CREATE VIEW v_appointment_details AS
 SELECT
   a.appointment_id, a.booking_code, a.status, a.booking_channel,
-  s.slot_id, s.slot_date, s.start_time, s.end_time, s.practitioner_id,
+  s.slot_id, s.slot_date, s.start_time, s.end_time,
   p.patient_id, p.patient_type, p.hn, p.first_name, p.last_name, p.phone_number,
+  p.national_id_last4, p.no_national_id, (p.national_id_hash IS NOT NULL) AS has_national_id,
   a.booked_by_line_user_id, lu.display_name AS booker_line_name, a.booker_relation,
   a.booked_by_staff, a.chief_complaint,
+  a.service_type_id, st.name AS service_name, a.service_price,
+  a.practitioner_id, pr.full_name AS practitioner_name, a.vn,
   a.confirmed_at, a.checked_in_at, a.cancelled_at, a.cancelled_by, a.cancel_reason,
   sr.service_start, sr.service_end, a.created_at
 FROM appointments a
 JOIN time_slots s       ON s.slot_id = a.slot_id
 JOIN patients p         ON p.patient_id = a.patient_id
 LEFT JOIN line_users lu ON lu.line_user_id = a.booked_by_line_user_id
+LEFT JOIN service_types st ON st.service_type_id = a.service_type_id
+LEFT JOIN practitioners pr ON pr.practitioner_id = a.practitioner_id
 LEFT JOIN service_records sr ON sr.appointment_id = a.appointment_id;
 
--- View: slot พร้อมคิวที่ active (ใช้หาว่ารอบไหนว่าง)
+-- View: แต่ละรอบรับได้กี่คิว / จองไปแล้วกี่คิว / เหลือกี่ที่
+--   availability: HOLIDAY / BLOCKED / FULL (ครบ capacity) / AVAILABLE
 CREATE VIEW v_slot_availability AS
 SELECT
-  s.slot_id, s.practitioner_id, s.slot_date, s.start_time, s.end_time,
+  s.slot_id, s.slot_date, s.start_time, s.end_time, s.capacity,
   s.is_blocked, s.block_reason,
-  a.appointment_id, a.status,
+  COUNT(a.appointment_id) AS booked_count,
+  GREATEST(s.capacity - COUNT(a.appointment_id), 0) AS remaining,
   CASE
-    WHEN h.holiday_date IS NOT NULL THEN 'HOLIDAY'
-    WHEN s.is_blocked                THEN 'BLOCKED'
-    WHEN a.appointment_id IS NULL    THEN 'AVAILABLE'
-    ELSE 'TAKEN'
+    WHEN MAX(h.holiday_date) IS NOT NULL       THEN 'HOLIDAY'
+    WHEN s.is_blocked                          THEN 'BLOCKED'
+    WHEN COUNT(a.appointment_id) >= s.capacity THEN 'FULL'
+    ELSE 'AVAILABLE'
   END AS availability
 FROM time_slots s
 LEFT JOIN appointments a ON a.active_slot_id = s.slot_id
-LEFT JOIN holidays h     ON h.holiday_date = s.slot_date;
+LEFT JOIN holidays h     ON h.holiday_date = s.slot_date
+GROUP BY s.slot_id;

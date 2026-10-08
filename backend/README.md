@@ -34,12 +34,18 @@ Copy-Item .env.example .env
 npm run dev
 ```
 
-ควรเห็น:
+ควรเห็น (ลิงก์ในนี้กดเปิดได้เลย):
 ```
-[web]      ส่งหน้าเว็บจาก ...\frontend\dist   (หรือ "ยังไม่มี frontend/dist" ถ้ายังไม่ได้ build)
+  หน้าผู้จอง (พอร์ตนี้ต่อ Cloudflare Tunnel)
+    http://127.0.0.1:4000
+  หน้าเจ้าหน้าที่ (LAN เท่านั้น)
+    ผู้ดูแล/นักพัฒนา  http://localhost:4001/admin
+    เคาน์เตอร์/หมอนวด http://localhost:4001/staff
+    kiosk            http://localhost:4001/kiosk
+    เครื่องอื่นใน LAN  http://192.168.x.x:4001
+
+[web]  ส่งหน้าเว็บจาก ...\frontend\dist
 [cron] started
-[public]   http://127.0.0.1:4000  (หน้าจอง — ออกเน็ตผ่าน tunnel)
-[internal] http://0.0.0.0:4001  (แอดมิน/เจ้าหน้าที่ — LAN เท่านั้น)
 ```
 
 เปิด http://localhost:4001/health ต้องได้ `{"ok":true,...,"db":"ok"}`
@@ -76,6 +82,7 @@ src/
     booking.js          กฎการจอง, transaction กันจองซ้อน, เช็กอิน, เริ่ม/จบบริการ, ปิดรอบ
     notify.js line.js   แจ้งเตือน LINE (Flex message) / LINE API
     settings.js         อ่าน-เขียน settings (cache 30 วิ, SECRET เข้ารหัส AES-256-GCM)
+    report.js           สร้างไฟล์ Excel รายงานการจอง (exceljs)
     patients.js audit.js
   jobs/cron.js          สร้าง slot / ตัด no-show + ระงับสิทธิ์ / เตือน 2 ชม. / เตือน 1 วัน
 ```
@@ -123,7 +130,7 @@ src/
 | PUT | `/practitioner/appointments/:id/record` | |
 
 ### ผู้ดูแล — `:4001/api/admin` (ADMIN, DEV)
-`dashboard` · `settings` (ยกเว้นหมวดการเชื่อมต่อ) · `slot-templates` (+ `/apply`) · `slots` (+ `/generate` `/block` `/unblock`) · `holidays` (+ `/preview`) · `practitioners` · `users` (+ `/reset-password`) · `patients` · `line-users` · `appointments` · `suspensions` (+ `/lift`) · `notification-templates` · `notification-logs` · `audit-logs`
+`dashboard` · `settings` (ยกเว้นหมวดการเชื่อมต่อ) · `slot-templates` (+ `/apply`) · `slots` (+ `/generate` `/block` `/unblock`) · `holidays` (+ `/preview`) · `practitioners` · `users` (+ `/reset-password`) · `patients` · `line-users` · `appointments` · `suspensions` (+ `/lift`) · `notification-templates` · `notification-logs` · `audit-logs` · `reports/bookings.xlsx?from&to&mask_phone` (Excel 4 แผ่น — `services/report.js`, บันทึก audit `EXPORT_REPORT`)
 
 ### นักพัฒนา — `:4001/api/dev` (DEV เท่านั้น)
 | Method | Path | |

@@ -1,7 +1,9 @@
 /**
  * pages/admin/PatientsPage.jsx — ข้อมูลผู้รับบริการ (CRUD /api/admin/patients)
  *
- *  - ค้นหาด้วยชื่อ / เบอร์ / HN, แบ่งหน้า 30 รายการ
+ *  - ค้นหาด้วยชื่อ / เบอร์ / HN / เลขบัตรประชาชน 13 หลัก (ค้นด้วย hash — ไม่ต้องถอดรหัสทั้งตาราง), แบ่งหน้า 30 รายการ
+ *  - ตารางแสดงเลขบัตรแบบปิดบัง (x-xxxx-xxxx9-87-6) · หน้ารายละเอียดเห็นเลขเต็มเพื่อแก้ไข (ทุกครั้งที่เปิดดูถูกบันทึก audit log)
+ *  - เลขบัตรไม่ได้แก้ → ไม่ส่งไป backend (log จะได้บอกถูกว่าใครเปลี่ยนเลขบัตรจริง)
  *  - กดแถว → หน้าต่างรายละเอียด: แก้ข้อมูล, ประวัติการจอง, ผู้จองที่ผูกไว้ (LINE), ประวัติระงับสิทธิ์,
  *    ระงับสิทธิ์ด้วยมือ, ลบ (soft delete — ประวัติยังอยู่)
  */
@@ -34,16 +36,16 @@ export function PatientsPage() {
       <label className="relative mb-4 block max-w-md">
         <span className="sr-only">ค้นหา</span>
         <Search className="pointer-events-none absolute top-1/2 left-4 size-5 -translate-y-1/2 text-faint" aria-hidden />
-        <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="ค้นหาชื่อ เบอร์โทร หรือ HN" className="pl-12" />
+        <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="ค้นหาชื่อ เบอร์โทร HN หรือเลขบัตร 13 หลัก" className="pl-12" />
       </label>
 
       <Card bodyClassName="p-0">
         {!data ? <Spinner /> : !data.patients.length ? <Empty title="ไม่พบผู้รับบริการ" /> : (
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[720px] text-left text-[15px]">
+            <table className="w-full min-w-[860px] text-left text-[15px]">
               <thead className="border-b border-line text-[14px] text-muted">
                 <tr>
-                  <th className="px-5 py-3 font-medium">ชื่อ-นามสกุล</th><th className="px-3 py-3 font-medium">HN</th><th className="px-3 py-3 font-medium">เบอร์โทร</th>
+                  <th className="px-5 py-3 font-medium">ชื่อ-นามสกุล</th><th className="px-3 py-3 font-medium">เลขบัตรประชาชน</th><th className="px-3 py-3 font-medium">HN</th><th className="px-3 py-3 font-medium">เบอร์โทร</th>
                   <th className="px-3 py-3 text-right font-medium">จองทั้งหมด</th><th className="px-3 py-3 text-right font-medium">ไม่มา</th><th className="px-5 py-3 font-medium">สถานะ</th>
                 </tr>
               </thead>
@@ -51,6 +53,9 @@ export function PatientsPage() {
                 {data.patients.map((p) => (
                   <tr key={p.patient_id} onClick={() => setOpenId(p.patient_id)} className="cursor-pointer hover:bg-ivory">
                     <td className="px-5 py-3 font-medium"><button type="button" className="text-left hover:text-herb">{p.first_name} {p.last_name}</button></td>
+                    <td className="px-3 py-3 tabular-nums">
+                      {p.national_id_masked ?? (p.no_national_id ? <span className="text-faint">ไม่มีบัตรไทย</span> : <span className="text-clay">ยังไม่กรอก</span>)}
+                    </td>
                     <td className="px-3 py-3">{p.hn ?? <span className="text-faint">บุคคลทั่วไป</span>}</td>
                     <td className="px-3 py-3 tabular-nums">{p.phone_number}</td>
                     <td className="px-3 py-3 text-right tabular-nums">{p.total_bookings}</td>
@@ -88,7 +93,11 @@ function PatientSheet({ id, onClose, onChanged }) {
   const load = async () => {
     const d = await staffApi(`/admin/patients/${id}`);
     setDetail(d);
-    setForm({ first_name: d.patient.first_name, last_name: d.patient.last_name, phone_number: d.patient.phone_number, hn: d.patient.hn ?? '', note: d.patient.note ?? '', relation: undefined });
+    setForm({
+      first_name: d.patient.first_name, last_name: d.patient.last_name, phone_number: d.patient.phone_number, hn: d.patient.hn ?? '',
+      note: d.patient.note ?? '', relation: undefined,
+      national_id: d.patient.national_id ?? '', no_national_id: !!d.patient.no_national_id,
+    });
   };
 
   useEffect(() => {
@@ -109,6 +118,8 @@ function PatientSheet({ id, onClose, onChanged }) {
     try {
       const { relation, ...p } = toPayload(form);
       const body = { ...p, note: form.note?.trim() || null };
+      // เลขบัตรเดิมไม่ได้แก้ → ไม่ส่ง (ยกเว้นติ๊ก "ไม่มีบัตรไทย" ซึ่งต้องส่งเพื่อลบเลขเดิม)
+      if (!isNew && detail?.patient.national_id && form.national_id === detail.patient.national_id) delete body.national_id;
       if (isNew) await staffApi('/admin/patients', { method: 'POST', body });
       else await staffApi(`/admin/patients/${id}`, { method: 'PUT', body });
       toast('บันทึกแล้ว');

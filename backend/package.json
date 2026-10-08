@@ -1,6 +1,6 @@
 {
   "name": "thai-massage-booking-backend",
-  "version": "0.4.0",
+  "version": "0.6.0",
   "private": true,
   "type": "module",
   "description": "Backend API — ระบบจองคิวนวดแผนไทย",
@@ -17,6 +17,7 @@
     "bcryptjs": "^2.4.3",
     "cookie-parser": "^1.4.7",
     "dotenv": "^16.4.5",
+    "exceljs": "^4.4.0",
     "express": "^4.21.2",
     "express-rate-limit": "^7.5.0",
     "helmet": "^8.0.0",
@@ -24,5 +25,8 @@
     "mysql2": "^3.11.5",
     "node-cron": "^4.6.0",
     "zod": "^3.24.1"
+  },
+  "overrides": {
+    "uuid": "^11.1.1"
   }
 }

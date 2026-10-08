@@ -3,6 +3,9 @@
  *   config (ไม่ต้องล็อกอิน) · me / consent / self / patients (ข้อมูลผู้จอง + รายชื่อคนที่จองให้)
  *   availability · bookings (จอง / ดูตั๋ว / ยืนยัน / ยกเลิก / ส่งตั๋วเข้าแชท)
  * ผู้จองเห็นและแก้ได้เฉพาะคิวที่ตัวเองจอง และผู้รับบริการที่อยู่ในรายชื่อของตัวเองเท่านั้น
+ *
+ * เลขบัตรประชาชน: เป็นของ "ผู้รับบริการ" (ลูกจองให้แม่ → กรอกเลขบัตรของแม่)
+ *   หน้าเว็บได้เห็นแค่แบบปิดบัง (x-xxxx-xxxx9-87-6) ไม่ส่งเลขเต็มกลับไปที่มือถือ
  */
 import { Router } from 'express';
 import { z } from 'zod';
@@ -11,28 +14,32 @@ import { ah, forbidden, notFound, conflict } from '../utils/errors.js';
 import { requireLineUser, requireConsent } from '../middleware/auth.js';
 import { getSettings } from '../services/settings.js';
 import { lineConfig } from '../services/line.js';
-import { findOrCreatePatient } from '../services/patients.js';
+import { findOrCreatePatient, applyNationalId } from '../services/patients.js';
+import { hashThaiId, maskThaiId } from '../utils/nationalId.js';
 import * as booking from '../services/booking.js';
 import { notifyAppointment } from '../services/notify.js';
 import { audit } from '../services/audit.js';
-import { patientInput, relationInput, idParam, codeParam } from './schemas.js';
+import { patientInput, relationInput, idParam, codeParam, serviceTypeId, nationalIdInput } from './schemas.js';
 
 export const publicRouter = Router();
 
 // ---------------------------------------------------------------------
 // ค่าที่หน้าเว็บต้องใช้ก่อนล็อกอิน
 // ---------------------------------------------------------------------
-publicRouter.get('/config', ah(async (_req, res) => {
+publicRouter.get('/config', ah(async (req, res) => {
   const s = await getSettings(['clinic_name', 'counter_phone', 'advance_booking_days', 'patient_cancel_min', 'allow_same_day']);
-  const c = await lineConfig();
+  const [c, serviceTypes] = await Promise.all([lineConfig(), booking.listServiceTypes()]);
   res.json({
     clinic_name: s.clinic_name,
     counter_phone: s.counter_phone,
     advance_booking_days: s.advance_booking_days,
     allow_same_day: s.allow_same_day,
     patient_cancel_min: s.patient_cancel_min,
+    service_types: serviceTypes,
     mode: c.mode,
     liff_id: c.liffId,
+    // แสดงลิงก์ "สำหรับเจ้าหน้าที่" เฉพาะเมื่อเปิดจากพอร์ต LAN (คนนอกที่เข้าผ่าน tunnel ไม่เห็น)
+    staff_link: !!req.viaInternal,
   });
 }));
 
@@ -46,6 +53,7 @@ async function myProfile(lineUserId) {
   const lu = await queryOne('SELECT * FROM line_users WHERE line_user_id = ?', [lineUserId]);
   const patients = await query(
     `SELECT p.patient_id, p.patient_type, p.hn, p.first_name, p.last_name, p.phone_number, bp.relation,
+            p.national_id_last4, p.no_national_id, p.national_id_hash IS NOT NULL AS has_national_id,
             p.patient_id = ? AS is_self
        FROM booker_patients bp JOIN patients p ON p.patient_id = bp.patient_id
       WHERE bp.line_user_id = ? AND p.is_deleted = FALSE
@@ -58,7 +66,10 @@ async function myProfile(lineUserId) {
     picture_url: lu.picture_url,
     consented: !!lu.pdpa_consent_at,
     self_patient_id: lu.self_patient_id,
-    patients: patients.map((p) => ({ ...p, is_self: !!p.is_self })),
+    patients: patients.map(({ national_id_last4: l4, ...p }) => ({
+      ...p, is_self: !!p.is_self, has_national_id: !!p.has_national_id, no_national_id: !!p.no_national_id,
+      national_id_masked: maskThaiId(l4),
+    })),
   };
 }
 
@@ -140,8 +151,15 @@ async function assertLinked(uid, patientId) {
 /**
  * แก้ข้อมูลผู้รับบริการ: ถ้า record นี้มีผู้จองคนอื่นผูกอยู่ด้วย หรือเปลี่ยน HN
  * → ไม่แก้ทับ แต่หา/สร้าง record ที่ตรงแทน (กันแก้ข้อมูลคนอื่น)
+ * ถ้ากรอกเลขบัตรที่มีอยู่แล้วใน record อื่น (เช่น แม่เคยลงทะเบียนที่ kiosk) → ผูกกับ record นั้นแทน
  */
 async function updateOrLink(conn, currentId, input, uid) {
+  if (currentId && input.national_id) {
+    const [[other]] = await conn.query(
+      'SELECT patient_id FROM patients WHERE national_id_hash = ? AND patient_id <> ?', [hashThaiId(input.national_id), currentId],
+    );
+    if (other) return findOrCreatePatient(conn, input); // ตรวจชื่อให้ตรงก่อนผูก
+  }
   if (currentId) {
     const [[cur]] = await conn.query('SELECT * FROM patients WHERE patient_id = ? FOR UPDATE', [currentId]);
     const [[{ others }]] = await conn.query(
@@ -152,6 +170,7 @@ async function updateOrLink(conn, currentId, input, uid) {
         'UPDATE patients SET first_name = ?, last_name = ?, phone_number = ? WHERE patient_id = ?',
         [input.first_name, input.last_name, input.phone_number, currentId],
       );
+      await applyNationalId(conn, currentId, input);
       return currentId;
     }
   }
@@ -168,6 +187,10 @@ publicRouter.get('/availability', ah(async (_req, res) => {
 const bookingBody = z.object({
   patient_id: z.coerce.number().int().positive(),
   slot_id: z.coerce.number().int().positive(),
+  service_type_id: serviceTypeId,
+  // ผู้รับบริการที่ยังไม่เคยกรอกเลขบัตร (เช่น ข้อมูลจาก v0.5) → กรอกมาพร้อมการจอง
+  national_id: nationalIdInput,
+  no_national_id: z.boolean().optional(),
   chief_complaint: z.string().trim().max(1000).optional().nullable(),
 });
 
@@ -177,6 +200,7 @@ publicRouter.post('/bookings', requireConsent, ah(async (req, res) => {
   const link = await assertLinked(uid, body.patient_id);
   const appt = await booking.createBooking({
     patientId: body.patient_id, slotId: body.slot_id, chiefComplaint: body.chief_complaint,
+    serviceTypeId: body.service_type_id, identity: { national_id: body.national_id, no_national_id: body.no_national_id },
     channel: 'ONLINE', lineUserId: uid, relation: link.relation,
   });
   await audit(req, 'BOOK', 'appointments', appt.appointment_id, { code: appt.booking_code });
@@ -256,6 +280,7 @@ function toTicket(a) {
     patient: { patient_id: a.patient_id, first_name: a.first_name, last_name: a.last_name, hn: a.hn },
     relation: a.booker_relation,
     chief_complaint: a.chief_complaint,
+    service: a.service_type_id ? { name: a.service_name, price: a.service_price == null ? null : Number(a.service_price) } : null,
     confirmed: !!a.confirmed_at,
     cancel_reason: a.cancel_reason,
     created_at: a.created_at,

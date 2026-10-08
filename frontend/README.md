@@ -17,7 +17,7 @@ npm run dev
 | ผู้ดูแลระบบ | http://localhost:5173/admin | `admin`, `dev` |
 | Kiosk | http://localhost:5173/kiosk | `kiosk1` (ออก: กดค้างโลโก้ 3 วิ แล้วใส่รหัส) |
 
-Vite ส่งต่อ API: `/api/public/*` → :4000, `/api/*` → :4001
+Vite ส่งต่อ API ทั้งหมด (`/api/*`) → :4001
 ลองบนมือถือ/แท็บเล็ตใน Wi-Fi เดียวกัน: `http://<IP เครื่อง>:5173` (ดู IP ด้วย `ipconfig`)
 
 ## โครงสร้าง
@@ -39,7 +39,7 @@ src/
   pages/
     patient/              ผู้จอง: จอง, ตั๋ว, การจองของฉัน, รายชื่อ, PDPA
     staff/                เคาน์เตอร์ (QueuePage), ห้องนวด (RoomPage)
-    admin/                Dashboard + เมนูผู้ดูแลทั้งหมด
+    admin/                Dashboard + เมนูผู้ดูแลทั้งหมด (รวม ReportsPage = ดาวน์โหลด Excel)
     admin/dev/            เมนูนักพัฒนา: ระบบ, การเชื่อมต่อ LINE, ผู้ใช้จำลอง
     kiosk/                จอสัมผัสหน้าคลินิก
 ```

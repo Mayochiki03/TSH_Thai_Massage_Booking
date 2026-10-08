@@ -60,7 +60,7 @@ export function PatientApp() {
   // โหมด LOCAL แต่ยังไม่มีการเลือกผู้ใช้จำลอง → ระบบยังไม่เปิดให้จองจริง
   if (config.needsMock) {
     return (
-      <Shell clinic={config.clinic_name}>
+      <Shell staffLink={config.staff_link} clinic={config.clinic_name}>
         <Notice
           icon={Unplug}
           title="ระบบจองคิวออนไลน์ยังไม่เปิดใช้งาน"
@@ -69,13 +69,13 @@ export function PatientApp() {
       </Shell>
     );
   }
-  if (!me) return <Shell clinic={config.clinic_name}><Spinner /></Shell>;
+  if (!me) return <Shell staffLink={config.staff_link} clinic={config.clinic_name}><Spinner /></Shell>;
 
   const needsOnboarding = !me.consented || !me.self_patient_id;
 
   return (
     <PatientCtx.Provider value={{ config, me, refreshMe }}>
-      <Shell clinic={config.clinic_name} me={needsOnboarding ? null : me}>
+      <Shell staffLink={config.staff_link} clinic={config.clinic_name} me={needsOnboarding ? null : me}>
         {needsOnboarding ? <Onboarding /> : <Outlet />}
       </Shell>
     </PatientCtx.Provider>
@@ -83,7 +83,7 @@ export function PatientApp() {
 }
 
 /** โครงหน้า: header + เนื้อหา + footer */
-function Shell({ children, clinic, me }) {
+function Shell({ children, clinic, me, staffLink }) {
   const nav = [
     { to: '/', icon: CalendarPlus, label: 'จองคิว', end: true },
     { to: '/my', icon: Ticket, label: 'การจองของฉัน' },
@@ -131,8 +131,8 @@ function Shell({ children, clinic, me }) {
       <footer className="mx-auto w-full max-w-[1120px] px-4 pt-10 pb-6 text-[13px] text-faint sm:px-6">
         <div className="flex flex-wrap items-center justify-between gap-2 border-t border-line pt-4">
           <span>{clinic ?? 'คลินิกแพทย์แผนไทย'}</span>
-          {/* ลิงก์เจ้าหน้าที่: ไม่แสดงในแอป LINE (ผู้ป่วยไม่ต้องเห็น) */}
-          {!inLineApp() && <Link to="/staff" className="hover:text-herb">สำหรับเจ้าหน้าที่</Link>}
+          {/* ลิงก์เจ้าหน้าที่: แสดงเฉพาะเมื่อเปิดในวง LAN (พอร์ต 4001) และไม่ได้อยู่ในแอป LINE */}
+          {staffLink && !inLineApp() && <Link to="/staff" className="hover:text-herb">สำหรับเจ้าหน้าที่</Link>}
         </div>
       </footer>
     </div>

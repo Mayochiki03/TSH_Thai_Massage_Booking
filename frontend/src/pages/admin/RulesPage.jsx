@@ -16,7 +16,7 @@ import { Button, Card, Input, PageHeader, Spinner, Switch, useToast, cx } from '
 const UNIT = {
   max_per_day: 'คิว', max_per_week: 'คิว', advance_booking_days: 'วัน', booking_cutoff_min: 'นาที',
   patient_cancel_min: 'นาที', checkin_early_min: 'นาที', no_show_after_min: 'นาที', slot_generate_days: 'วัน',
-  suspend_noshow_count: 'ครั้ง', suspend_window_days: 'วัน', suspend_days: 'วัน', remind_1d_hour: 'นาฬิกา', kiosk_idle_sec: 'วินาที',
+  bed_count: 'เตียง', suspend_noshow_count: 'ครั้ง', suspend_window_days: 'วัน', suspend_days: 'วัน', remind_1d_hour: 'นาฬิกา', kiosk_idle_sec: 'วินาที',
 };
 const SECTIONS = [
   { category: 'BOOKING', title: 'กฎการจอง', description: 'ใช้กับการจองผ่าน LINE และ kiosk (เจ้าหน้าที่ยืนยันข้ามได้)' },

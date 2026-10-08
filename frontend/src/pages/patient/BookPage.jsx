@@ -1,7 +1,10 @@
 /**
  * pages/patient/BookPage.jsx — หน้าจองคิว (หน้าแรกของผู้จอง)
  *
- * ขั้นตอนบนหน้าเดียว: เลือกวัน → รอบเวลา → ผู้รับบริการ → อาการ (ไม่บังคับ) → ตรวจสอบและยืนยัน
+ * ขั้นตอนบนหน้าเดียว: เลือกวัน → รอบเวลา → ประเภทบริการ (ราคา) → ผู้รับบริการ (+ เลขบัตรถ้ายังไม่มี) → อาการ → ยืนยัน
+ *
+ * หลายเตียง: รอบที่เหลือที่น้อยแสดง "เหลือ n ที่"
+ * เลขบัตรประชาชนเป็นของผู้รับบริการ — ถ้าคนที่เลือกยังไม่เคยกรอก จะมีช่องให้กรอกก่อนจอง (ส่งไปพร้อมการจอง)
  *
  * Responsive:
  *  - มือถือ/แท็บเล็ตแนวตั้ง : คอลัมน์เดียว + แถบสรุปและปุ่มจองติดขอบล่าง
@@ -9,10 +12,12 @@
  */
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router';
-import { Plus, UserRound, CalendarX2, Check } from 'lucide-react';
+import { Plus, UserRound, CalendarX2, Check, Sparkles } from 'lucide-react';
 import { patientApi } from '../../lib/liff.js';
-import { relativeDay, weekdayShort, dayNum, monthShort, thaiDateLong } from '../../lib/format.js';
+import { relativeDay, weekdayShort, dayNum, monthShort, thaiDateLong, baht } from '../../lib/format.js';
+import { thaiIdError } from '../../lib/thaiId.js';
 import { Button, Sheet, Spinner, Textarea, Empty, useToast, cx } from '../../components/ui.jsx';
+import { NationalIdField } from '../../components/NationalIdField.jsx';
 import { usePatient } from './PatientApp.jsx';
 import { PersonSheet } from './PeoplePage.jsx';
 
@@ -27,6 +32,10 @@ export function BookPage() {
   const [date, setDate] = useState(null);
   const [slotId, setSlotId] = useState(null);
   const [patientId, setPatientId] = useState(me.self_patient_id);
+  const services = config.service_types ?? [];
+  const [serviceId, setServiceId] = useState(services[0]?.service_type_id ?? null);
+  const [identity, setIdentity] = useState({ national_id: '', no_national_id: false }); // เลขบัตรของคนที่ยังไม่เคยกรอก
+  const [idError, setIdError] = useState(null);
   const [complaint, setComplaint] = useState('');
   const [adding, setAdding] = useState(false);
   const [reviewing, setReviewing] = useState(false);
@@ -48,7 +57,12 @@ export function BookPage() {
   const day = days?.find((d) => d.date === date);
   const slot = day?.slots.find((s) => s.slot_id === slotId);
   const person = me.patients.find((p) => p.patient_id === patientId);
-  const ready = slot && person;
+  const service = services.find((x) => x.service_type_id === serviceId);
+  const needsId = person && !person.has_national_id && !person.no_national_id;
+  const idOk = !needsId || identity.no_national_id || !thaiIdError(identity.national_id);
+  const ready = slot && person && service && idOk;
+
+  useEffect(() => { setIdentity({ national_id: '', no_national_id: false }); setIdError(null); }, [patientId]);
 
   const toggleComplaint = (c) => {
     setComplaint((cur) => {
@@ -62,13 +76,17 @@ export function BookPage() {
     try {
       const t = await patientApi('/bookings', {
         method: 'POST',
-        body: { patient_id: patientId, slot_id: slotId, chief_complaint: complaint.trim() || null },
+        body: {
+          patient_id: patientId, slot_id: slotId, service_type_id: serviceId, chief_complaint: complaint.trim() || null,
+          ...(needsId && { national_id: identity.national_id || null, no_national_id: identity.no_national_id }),
+        },
       });
       navigate(`/ticket/${t.booking_code}?new=1`);
     } catch (err) {
       setSubmitting(false);
       setReviewing(false);
       toast(err.message, 'error');
+      if (err.fields?.national_id) setIdError(err.fields.national_id[0]);
       if (['SLOT_TAKEN', 'CUTOFF', 'SLOT_BLOCKED', 'HOLIDAY'].includes(err.code)) {
         setSlotId(null);
         load();
@@ -154,13 +172,49 @@ export function BookPage() {
                 >
                   <span className={cx('font-display text-[22px] font-semibold leading-none', !ok && 'text-faint line-through decoration-1')}>{s.start_time}</span>
                   <span className={cx('mt-1 text-[14px]', ok ? 'text-muted' : 'text-faint')}>
-                    {ok ? `ถึง ${s.end_time} น.` : s.status === 'HOLIDAY' ? 'วันหยุด' : 'ไม่ว่าง'}
+                    {ok ? `ถึง ${s.end_time} น.` : s.status === 'HOLIDAY' ? 'วันหยุด' : 'เต็ม'}
                   </span>
+                  {ok && s.capacity > 1 && s.remaining < s.capacity && !active && (
+                    <span className="absolute top-2.5 right-2.5 rounded-full bg-turmeric-soft px-2 py-0.5 text-[12px] font-medium text-[#7a5e0e]">เหลือ {s.remaining}</span>
+                  )}
                   {active && (
                     <span className="anim-pop absolute top-3 right-3 grid size-6 place-items-center rounded-full bg-herb text-white">
                       <Check className="size-4" strokeWidth={3} aria-hidden />
                     </span>
                   )}
+                </button>
+              );
+            })}
+          </div>
+        </section>
+      )}
+
+      {/* ประเภทบริการ */}
+      {services.length > 0 && (
+        <section className="mt-8" aria-label="ประเภทบริการ">
+          <h2 className="mb-3 text-lg font-semibold">ประเภทบริการ</h2>
+          <div className="grid gap-2.5 sm:grid-cols-2">
+            {services.map((sv) => {
+              const active = sv.service_type_id === serviceId;
+              return (
+                <button
+                  key={sv.service_type_id}
+                  type="button"
+                  onClick={() => setServiceId(sv.service_type_id)}
+                  aria-pressed={active}
+                  className={cx(
+                    'flex w-full items-center gap-3 rounded-2xl border px-4 py-3.5 text-left transition-colors',
+                    active ? 'border-herb bg-leaf-soft ring-2 ring-herb' : 'border-line bg-paper hover:border-herb',
+                  )}
+                >
+                  <span className={cx('grid size-10 shrink-0 place-items-center rounded-full', active ? 'bg-herb text-white' : 'bg-sand text-clay')}>
+                    <Sparkles className="size-5" aria-hidden />
+                  </span>
+                  <span className="min-w-0 flex-1">
+                    <span className="block font-medium">{sv.name}</span>
+                    {sv.description && <span className="block text-[14px] text-muted">{sv.description}</span>}
+                  </span>
+                  <span className="shrink-0 font-display text-[18px] font-semibold text-herb">{baht(sv.price)}</span>
                 </button>
               );
             })}
@@ -205,6 +259,20 @@ export function BookPage() {
             <span className="font-medium">จองให้คนอื่น</span>
           </button>
         </div>
+        {needsId && (
+          <div className="anim-rise mt-3 rounded-2xl border border-clay/30 bg-clay-soft/50 p-4">
+            <p className="mb-3 text-[15px] text-clay">
+              ครั้งแรกที่จองให้ <b>{person.first_name}</b> กรุณากรอกเลขบัตรประชาชนของ{person.is_self ? 'คุณ' : `คุณ${person.first_name}`} (กรอกครั้งเดียว)
+            </p>
+            <NationalIdField
+              value={identity}
+              onChange={(v) => { setIdentity(v); setIdError(null); }}
+              error={idError ?? (identity.national_id.length === 13 ? thaiIdError(identity.national_id) : null)}
+              label={person.is_self ? 'เลขบัตรประชาชนของคุณ' : `เลขบัตรประชาชนของ ${person.first_name}`}
+              hint="ใช้ยืนยันตัวตนกับโรงพยาบาล เก็บแบบเข้ารหัส"
+            />
+          </div>
+        )}
       </section>
 
       {/* อาการ */}
@@ -239,8 +307,10 @@ export function BookPage() {
           <dl className="mt-4 space-y-3 text-[16px]">
             <SummaryRow label="วันที่" value={date ? thaiDateLong(date) : null} />
             <SummaryRow label="เวลา" value={slot ? `${slot.start_time}–${slot.end_time} น.` : null} placeholder="ยังไม่ได้เลือก" />
+            <SummaryRow label="บริการ" value={service ? `${service.name} · ${baht(service.price)}` : null} placeholder="ยังไม่ได้เลือก" />
             <SummaryRow label="ผู้รับบริการ" value={person ? `${person.first_name} ${person.last_name}` : null} placeholder="ยังไม่ได้เลือก" />
           </dl>
+          {needsId && !idOk && <p className="mt-3 text-[14px] text-clay">กรอกเลขบัตรประชาชนของผู้รับบริการก่อนจอง</p>}
           <Button size="lg" className="mt-5 w-full" disabled={!ready} onClick={() => setReviewing(true)}>ตรวจสอบและจองคิว</Button>
           <p className="mt-4 rounded-xl bg-sand px-4 py-3 text-[14px] text-clay">
             มาเช็กอินก่อนเวลานัด 10–15 นาที ยกเลิกเองได้ถึง {Math.round(config.patient_cancel_min / 60)} ชั่วโมงก่อนนัด
@@ -254,7 +324,10 @@ export function BookPage() {
         <div className="border-t border-line bg-paper/95 backdrop-blur">
           <div className="mx-auto flex max-w-[1120px] flex-col gap-2 px-4 pt-3 pb-[max(0.9rem,env(safe-area-inset-bottom))] sm:flex-row sm:items-center sm:justify-between sm:px-6">
             <div className="min-h-6 text-[15px] text-muted">
-              {pickedLabel ? <span className="font-medium text-ink">{pickedLabel}</span> : 'ยังไม่ได้เลือกรอบเวลา'}
+              {pickedLabel
+                ? <span className="font-medium text-ink">{pickedLabel}{service ? ` · ${baht(service.price)}` : ''}</span>
+                : 'ยังไม่ได้เลือกรอบเวลา'}
+              {slot && needsId && !idOk && <span className="block text-[14px] text-clay">กรอกเลขบัตรประชาชนของผู้รับบริการก่อนจอง</span>}
             </div>
             <Button size="lg" className="w-full sm:w-auto sm:min-w-64" disabled={!ready} onClick={() => setReviewing(true)}>ตรวจสอบและจองคิว</Button>
           </div>
@@ -271,6 +344,7 @@ export function BookPage() {
           <dl className="divide-y divide-line rounded-2xl border border-line">
             <Row label="วันที่" value={thaiDateLong(date)} />
             <Row label="เวลา" value={`${slot.start_time}–${slot.end_time} น.`} />
+            <Row label="บริการ" value={`${service.name} (${baht(service.price)})`} />
             <Row label="ผู้รับบริการ" value={`${person.first_name} ${person.last_name}`} />
             {complaint.trim() && <Row label="อาการ" value={complaint.trim()} />}
           </dl>

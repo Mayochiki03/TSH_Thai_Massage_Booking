@@ -2,7 +2,8 @@
  * pages/kiosk/KioskApp.jsx — หน้าจอ kiosk หน้าคลินิก (/kiosk)
  *
  * ผู้ป่วย walk-in ใช้เองบนจอสัมผัส ไม่ต้องมี LINE:
- *   จองคิว   : เลือกรอบ → ใส่เบอร์โทร (ค้นข้อมูลเดิม หรือกรอกชื่อใหม่) → ยืนยัน → ได้รหัสจอง
+ *   จองคิว   : เลือกรอบ → ใส่เบอร์โทร (ค้นข้อมูลเดิม หรือกรอกชื่อใหม่) → เลขบัตรประชาชน (ถ้ายังไม่เคยกรอก)
+ *              → เลือกประเภทบริการ + ยืนยัน → ได้รหัสจอง
  *   เช็กอิน   : ใส่รหัสจอง 6 ตัว → ใส่เลข 4 ตัวท้ายเบอร์โทร → เช็กอินเรียบร้อย
  *
  * รองรับทุกขนาดจอ (ไม่รู้ขนาดเครื่องจริง):
@@ -11,7 +12,7 @@
  *   - แนวนอน (landscape) วางซ้าย-ขวา / แนวตั้ง (portrait) เรียงบน-ล่าง
  *
  * ความเป็นส่วนตัว (จอสาธารณะ):
- *   - ชื่อที่แสดงถูกปิดบังนามสกุล, ไม่แสดงเบอร์เต็ม / HN
+ *   - ชื่อที่แสดงถูกปิดบังนามสกุล, ไม่แสดงเบอร์เต็ม / HN / เลขบัตร (เลขบัตรที่กรอกแสดงเฉพาะตอนกำลังกด)
  *   - ไม่มีคนใช้งานเกิน kiosk_idle_sec วินาที → ถามว่ายังใช้อยู่ไหม แล้วกลับหน้าแรกเอง
  *
  * ต้องล็อกอินด้วยบัญชี KIOSK ครั้งเดียวตอนติดตั้งเครื่อง (session 30 วัน)
@@ -26,7 +27,8 @@ import { useNavigate } from 'react-router';
 import { CalendarPlus, ScanLine, ChevronLeft, Delete, Check, Hand, CircleAlert, Home, LayoutDashboard, LockKeyhole } from 'lucide-react';
 import { staffApi } from '../../lib/api.js';
 import { SessionGate, useSession, homeFor } from '../../lib/session.jsx';
-import { relativeDay, weekdayShort, dayNum, monthShort, thaiDateLong, todayYmd } from '../../lib/format.js';
+import { relativeDay, weekdayShort, dayNum, monthShort, thaiDateLong, todayYmd, baht } from '../../lib/format.js';
+import { formatThaiId, thaiIdError } from '../../lib/thaiId.js';
 import { CompressMark } from '../../components/Logo.jsx';
 import { cx } from '../../components/ui.jsx';
 
@@ -80,7 +82,7 @@ function Kiosk() {
       <TopBar clinic={config?.clinic_name} onLongPress={isPreview ? undefined : () => setExitOpen(true)} />
       <main className="min-h-0 flex-1 overflow-y-auto px-[1.5em] py-[1em]">
         {screen === 'home' && <HomeScreen onBook={() => setScreen('book')} onCheckIn={() => setScreen('checkin')} />}
-        {screen === 'book' && <BookFlow key={`b${resetKey}`} onHome={goHome} />}
+        {screen === 'book' && <BookFlow key={`b${resetKey}`} onHome={goHome} services={config?.service_types ?? []} />}
         {screen === 'checkin' && <CheckInFlow key={`c${resetKey}`} onHome={goHome} />}
       </main>
       <footer className="flex items-center justify-between gap-[1em] border-t border-line bg-paper px-[1.5em] py-[0.6em] text-[0.85em] text-muted">
@@ -310,7 +312,7 @@ function Done({ ticket, title, message, onHome }) {
       <div className="mt-[1em] w-full rounded-[1.2em] border border-line bg-paper p-[1.2em]">
         <div className="text-muted">รหัสจอง</div>
         <div className="font-display text-[3em] font-semibold leading-none tracking-[0.16em] text-herb">{ticket.booking_code}</div>
-        <div className="mt-[0.8em] text-[1.15em]">{ticket.name}</div>
+        <div className="mt-[0.8em] text-[1.15em]">{ticket.name}{ticket.service ? ` · ${ticket.service.name}` : ''}</div>
         <div className="font-display text-[1.25em] font-semibold">
           {relativeDay(ticket.slot_date) ?? thaiDateLong(ticket.slot_date)} {ticket.start_time}–{ticket.end_time} น.
         </div>
@@ -324,8 +326,8 @@ function Done({ ticket, title, message, onHome }) {
 // =====================================================================
 // จองคิว walk-in
 // =====================================================================
-function BookFlow({ onHome }) {
-  const [step, setStep] = useState(0);            // 0 รอบเวลา, 1 ผู้รับบริการ, 2 ยืนยัน
+function BookFlow({ onHome, services }) {
+  const [step, setStep] = useState(0);            // 0 รอบเวลา, 1 ผู้รับบริการ, 2 เลขบัตร (ถ้าต้องกรอก), 3 บริการ + ยืนยัน
   const [days, setDays] = useState(null);
   const [date, setDate] = useState(null);
   const [slot, setSlot] = useState(null);
@@ -333,6 +335,14 @@ function BookFlow({ onHome }) {
   const [found, setFound] = useState(null);       // ผลค้นจากเบอร์ (null = ยังไม่ค้น)
   const [person, setPerson] = useState(null);     // { patient_id, name } | { new: true, first_name, last_name, hn }
   const [complaint, setComplaint] = useState([]);
+  const [nid, setNid] = useState('');               // เลขบัตร 13 หลัก (ตัวเลขล้วน)
+  const [noNid, setNoNid] = useState(false);        // ไม่มีบัตรประชาชนไทย
+  const [serviceId, setServiceId] = useState(null);
+  useEffect(() => { setServiceId((cur) => cur ?? services[0]?.service_type_id ?? null); }, [services]);
+  const service = services.find((x) => x.service_type_id === serviceId);
+  /** ต้องขอเลขบัตรไหม: คนใหม่ทุกคน / คนเดิมที่ยังไม่เคยกรอก */
+  const needsId = !!person && (person.new || person.needs_national_id);
+  const pickPerson = (p) => { setPerson(p); setNid(''); setNoNid(false); setError(''); setStep(p.new || p.needs_national_id ? 2 : 3); };
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const [ticket, setTicket] = useState(null);
@@ -354,17 +364,20 @@ function BookFlow({ onHome }) {
   const submit = async () => {
     setError(''); setBusy(true);
     try {
+      const identity = needsId ? { national_id: noNid ? null : nid, no_national_id: noNid } : {};
       const body = {
         slot_id: slot.slot_id,
+        service_type_id: serviceId,
         chief_complaint: complaint.join(', ') || null,
         ...(person.new
-          ? { patient: { first_name: person.first_name.trim(), last_name: person.last_name.trim(), phone_number: phone, hn: person.hn?.trim() || null } }
-          : { patient_id: person.patient_id, phone_number: phone }),
+          ? { patient: { first_name: person.first_name.trim(), last_name: person.last_name.trim(), phone_number: phone, hn: person.hn?.trim() || null, ...identity } }
+          : { patient_id: person.patient_id, phone_number: phone, ...identity }),
       };
       setTicket(await staffApi('/kiosk/bookings', { method: 'POST', body }));
     } catch (e) {
       setError(e.message);
       if (['SLOT_TAKEN', 'SLOT_PASSED'].includes(e.code)) { setSlot(null); setStep(0); loadDays(); }
+      if (e.fields?.national_id || ['NID_MISMATCH', 'NID_TAKEN', 'NID_REQUIRED'].includes(e.code)) setStep(2);
     } finally { setBusy(false); }
   };
 
@@ -378,7 +391,7 @@ function BookFlow({ onHome }) {
 
   return (
     <div className="mx-auto max-w-[60em]">
-      <Steps steps={['เลือกรอบเวลา', 'ผู้รับบริการ', 'ยืนยัน']} current={step} />
+      <Steps steps={needsId ? ['เลือกรอบเวลา', 'ผู้รับบริการ', 'เลขบัตร', 'ยืนยัน'] : ['เลือกรอบเวลา', 'ผู้รับบริการ', 'ยืนยัน']} current={needsId || step < 3 ? step : 2} />
 
       {/* ---------- 0) เลือกรอบ ---------- */}
       {step === 0 && (
@@ -406,7 +419,7 @@ function BookFlow({ onHome }) {
                       className={cx('flex h-[4.2em] flex-col items-start justify-center rounded-[0.9em] border-2 px-[1em] text-left',
                         ok ? 'border-line bg-paper active:border-herb active:bg-leaf-soft' : 'border-transparent bg-sand/70 text-faint')}>
                       <span className={cx('font-display text-[1.6em] font-semibold leading-none', !ok && 'line-through')}>{s.start_time}</span>
-                      <span className="mt-[0.2em] text-[0.9em]">{ok ? `ถึง ${s.end_time} น.` : 'ไม่ว่าง'}</span>
+                      <span className="mt-[0.2em] text-[0.9em]">{ok ? `ถึง ${s.end_time} น.${s.capacity > 1 && s.remaining < s.capacity ? ` · เหลือ ${s.remaining}` : ''}` : 'เต็ม'}</span>
                     </button>
                   );
                 })}
@@ -432,7 +445,7 @@ function BookFlow({ onHome }) {
                       <p className="mb-[0.4em] text-muted">แตะชื่อของคุณ</p>
                       <div className="space-y-[0.5em]">
                         {found.map((p) => (
-                          <button key={p.patient_id} type="button" onClick={() => { setPerson(p); setStep(2); }}
+                          <button key={p.patient_id} type="button" onClick={() => pickPerson(p)}
                             className="flex w-full items-center justify-between rounded-[0.8em] border-2 border-line bg-paper px-[1em] py-[0.7em] text-left active:border-herb">
                             <span className="font-display text-[1.2em] font-semibold">{p.name}</span>
                             <span className="text-[0.85em] text-muted">{p.has_hn ? 'มี HN' : 'บุคคลทั่วไป'}</span>
@@ -456,7 +469,7 @@ function BookFlow({ onHome }) {
                         className="h-[2.6em] w-full rounded-[0.8em] border-2 border-line bg-paper px-[0.8em] text-[1.15em] focus:border-herb focus:outline-none" />
                     </label>
                   ))}
-                  <BigButton className="w-full" disabled={!person.first_name.trim() || !person.last_name.trim()} onClick={() => setStep(2)}>ถัดไป</BigButton>
+                  <BigButton className="w-full" disabled={!person.first_name.trim() || !person.last_name.trim()} onClick={() => pickPerson(person)}>ถัดไป</BigButton>
                 </div>
               )}
               <ErrorBox>{error}</ErrorBox>
@@ -476,18 +489,62 @@ function BookFlow({ onHome }) {
         </>
       )}
 
-      {/* ---------- 2) ยืนยัน ---------- */}
-      {step === 2 && (
+      {/* ---------- 2) เลขบัตรประชาชน (คนใหม่ / คนเดิมที่ยังไม่เคยกรอก) ---------- */}
+      {step === 2 && needsId && (
         <>
-          <BackButton onClick={() => setStep(1)} />
+          <BackButton onClick={() => { setStep(1); setError(''); }} />
+          <div className="grid gap-[1.5em] landscape:grid-cols-[1fr_minmax(0,0.9fr)]">
+            <div>
+              <h1 className="font-display text-[1.6em] font-semibold">เลขบัตรประชาชนของผู้รับบริการ</h1>
+              <p className="mt-[0.3em] text-muted">กรอกครั้งเดียว ครั้งต่อไปไม่ต้องกรอก</p>
+              <div className="mt-[0.8em]"><Display label="เลขบัตรประชาชน 13 หลัก" value={formatThaiId(nid)} placeholder="x-xxxx-xxxxx-xx-x" mono /></div>
+              <button type="button" onClick={() => { setNoNid(true); setNid(''); setError(''); setStep(3); }}
+                className="mt-[0.9em] text-herb underline">ไม่มีบัตรประชาชนไทย (เช่น ชาวต่างชาติ)</button>
+              <ErrorBox>{error}</ErrorBox>
+            </div>
+            <div>
+              <NumPad
+                onKey={(d) => { setError(''); setNoNid(false); setNid((v) => (v.length < 13 ? v + d : v)); }}
+                onDelete={() => { setError(''); setNid((v) => v.slice(0, -1)); }}
+                onClear={() => { setError(''); setNid(''); }}
+              />
+              <BigButton className="mt-[0.7em] w-full" disabled={nid.length !== 13}
+                onClick={() => { const e = thaiIdError(nid); if (e) setError(e); else { setNoNid(false); setStep(3); } }}>ถัดไป</BigButton>
+            </div>
+          </div>
+        </>
+      )}
+
+      {/* ---------- 3) ประเภทบริการ + ยืนยัน ---------- */}
+      {step === 3 && (
+        <>
+          <BackButton onClick={() => setStep(needsId ? 2 : 1)} />
           <h1 className="font-display text-[1.6em] font-semibold">ตรวจสอบและยืนยัน</h1>
           <div className="mt-[0.8em] grid gap-[1.2em] landscape:grid-cols-2">
             <dl className="space-y-[0.6em] rounded-[1em] border border-line bg-paper p-[1.1em]">
               <div><dt className="text-muted">วันและเวลา</dt><dd className="font-display text-[1.3em] font-semibold">{relativeDay(date) ?? thaiDateLong(date)} {slot.start_time}–{slot.end_time} น.</dd></div>
               <div><dt className="text-muted">ผู้รับบริการ</dt><dd className="font-display text-[1.3em] font-semibold">{person.new ? `${person.first_name} ${person.last_name}` : person.name}</dd></div>
               <div><dt className="text-muted">เบอร์โทร</dt><dd className="text-[1.1em]">{fmtPhone(phone)}</dd></div>
+              {service && <div><dt className="text-muted">บริการ</dt><dd className="font-display text-[1.2em] font-semibold">{service.name} · {baht(service.price)}</dd></div>}
             </dl>
             <div>
+              {services.length > 1 && (
+                <div className="mb-[1em]">
+                  <p className="mb-[0.4em] text-muted">ประเภทบริการ</p>
+                  <div className="grid gap-[0.5em]">
+                    {services.map((x) => {
+                      const on = x.service_type_id === serviceId;
+                      return (
+                        <button key={x.service_type_id} type="button" aria-pressed={on} onClick={() => setServiceId(x.service_type_id)}
+                          className={cx('flex items-center justify-between gap-[0.6em] rounded-[0.8em] border-2 px-[1em] py-[0.6em] text-left', on ? 'border-herb bg-leaf-soft' : 'border-line bg-paper')}>
+                          <span className="font-display text-[1.15em] font-semibold">{on && <Check className="mr-[0.3em] inline size-[0.9em] text-herb" aria-hidden />}{x.name}</span>
+                          <span className="shrink-0 font-display text-[1.15em] font-semibold text-herb">{baht(x.price)}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
               <p className="mb-[0.4em] text-muted">อาการเบื้องต้น (แตะเลือกได้ ไม่บังคับ)</p>
               <div className="flex flex-wrap gap-[0.5em]">
                 {COMPLAINTS.map((c) => {
@@ -503,7 +560,7 @@ function BookFlow({ onHome }) {
             </div>
           </div>
           <ErrorBox>{error}</ErrorBox>
-          <BigButton className="mt-[1.2em] w-full landscape:w-auto landscape:min-w-[14em]" disabled={busy} onClick={submit}>{busy ? 'กำลังจอง' : 'ยืนยันการจอง'}</BigButton>
+          <BigButton className="mt-[1.2em] w-full landscape:w-auto landscape:min-w-[14em]" disabled={busy || !serviceId} onClick={submit}>{busy ? 'กำลังจอง' : 'ยืนยันการจอง'}</BigButton>
         </>
       )}
     </div>

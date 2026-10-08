@@ -85,6 +85,8 @@ export function requirePasswordChanged(req, _res, next) {
 // =====================================================================
 // ผู้จอง (LINE)
 //  - โหมด LOCAL: ใช้ header X-Dev-Line-User (ผู้ใช้จำลอง) — ใช้ได้เฉพาะโหมดนี้เท่านั้น
+//    และต้องไม่ได้มาทาง Cloudflare Tunnel (มี header cf-ray) → คนนอกปลอมเป็นผู้ใช้คนอื่นไม่ได้
+//    แม้จะลืมเปลี่ยนโหมดก่อนเปิด tunnel
 //  - โหมดอื่น: Authorization: Bearer <liff.getIDToken()> → ตรวจกับ LINE
 // =====================================================================
 export async function requireLineUser(req, _res, next) {
@@ -93,6 +95,9 @@ export async function requireLineUser(req, _res, next) {
     let profile = null;
 
     if (cfg.mode === 'LOCAL') {
+      if (req.get('cf-ray') || req.get('cf-connecting-ip')) {
+        throw new HttpError(403, 'LOCAL_ONLY', 'ระบบจองออนไลน์ยังไม่เปิดใช้งาน');
+      }
       const devId = req.get('X-Dev-Line-User');
       if (devId && /^U[0-9a-zA-Z]{10,48}$/.test(devId)) {
         profile = { sub: devId, name: req.get('X-Dev-Line-Name') ? decodeURIComponent(req.get('X-Dev-Line-Name')) : 'ผู้ใช้ทดสอบ', picture: null };

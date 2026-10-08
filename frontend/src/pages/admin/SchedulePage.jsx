@@ -3,10 +3,13 @@
  *
  *  1) แม่แบบรอบเวลา (CRUD /api/admin/slot-templates) — เลือกเวลาด้วย TimePicker (24 ชม. ไม่มี AM/PM)
  *     แก้เวลาแล้วกด "ใช้กับวันถัดไป" → ระบบลบรอบที่ยังไม่มีใครจองตั้งแต่พรุ่งนี้ แล้วสร้างใหม่ตามแม่แบบ
- *  2) ตารางรายวัน (GET /api/admin/slots) — ดูสถานะทุกรอบของวันที่เลือก, ปิด/เปิดรับรายรอบหรือทั้งวัน
+ *  2) จำนวนเตียง (setting bed_count) — 1 รอบรับได้กี่คน (นวดพร้อมกันได้กี่เตียง)
+ *     บันทึกแล้วปรับทุกรอบตั้งแต่วันนี้ทันที (รอบที่มีคิวมากกว่าจำนวนเตียงใหม่ จะคงไว้เท่าจำนวนคิว)
+ *  3) ตารางรายวัน (GET /api/admin/slots) — ดูว่าแต่ละรอบจองไปกี่เตียง ใครบ้าง, ปรับเตียงเฉพาะรอบ
+ *     (เช่น วันนี้หมอนวดลา 1 คน), ปิด/เปิดรับรายรอบหรือทั้งวัน
  */
 import { useState } from 'react';
-import { Plus, Trash2, Save, ChevronLeft, ChevronRight, Lock, LockOpen, RefreshCw, CalendarCog } from 'lucide-react';
+import { Plus, Trash2, Save, ChevronLeft, ChevronRight, Lock, LockOpen, RefreshCw, CalendarCog, BedDouble, Minus } from 'lucide-react';
 import { staffApi } from '../../lib/api.js';
 import { useLoad } from '../../lib/useLoad.js';
 import { thaiDateLong, todayYmd, addDays, hhmm } from '../../lib/format.js';
@@ -17,9 +20,12 @@ import { TimePicker } from '../../components/TimePicker.jsx';
 export function SchedulePage() {
   return (
     <>
-      <PageHeader title="รอบเวลาและตาราง" description="กำหนดรอบเวลามาตรฐาน และปิด/เปิดรับรายวัน" />
+      <PageHeader title="รอบเวลาและเตียง" description="กำหนดรอบเวลามาตรฐาน จำนวนเตียง และปิด/เปิดรับรายวัน" />
       <div className="space-y-6">
-        <Templates />
+        <div className="grid gap-6 xl:grid-cols-[1fr_360px] xl:items-start">
+          <Templates />
+          <BedCount />
+        </div>
         <DaySlots />
       </div>
     </>
@@ -118,6 +124,62 @@ function Templates() {
 }
 
 // ---------------------------------------------------------------------
+// จำนวนเตียง (ค่าเริ่มต้นของทุกรอบ)
+// ---------------------------------------------------------------------
+function BedCount() {
+  const { data, reload } = useLoad(
+    () => staffApi('/admin/settings').then((d) => Number(d.settings.find((s) => s.key === 'bed_count')?.value ?? 1)),
+    [],
+  );
+  const [beds, setBeds] = useState(null);
+  const [saving, setSaving] = useState(false);
+  const toast = useToast();
+  const confirm = useConfirm();
+  const value = beds ?? data;
+
+  const save = async () => {
+    const ok = await confirm({
+      title: `ตั้งเป็น ${value} เตียงต่อรอบ?`,
+      body: 'ปรับทุกรอบตั้งแต่วันนี้เป็นต้นไปทันที รอบที่มีคิวจองมากกว่านี้อยู่แล้วจะคงจำนวนเท่าคิวที่มี (ไม่ยกเลิกใคร)',
+      okText: 'บันทึก',
+    });
+    if (!ok) return;
+    setSaving(true);
+    try {
+      await staffApi('/admin/settings', { method: 'PUT', body: { bed_count: value } });
+      toast(`ตั้งเป็น ${value} เตียงแล้ว`);
+      setBeds(null);
+      reload();
+    } catch (err) { toast(err.message, 'error'); }
+    finally { setSaving(false); }
+  };
+
+  return (
+    <Card title="จำนวนเตียง" description="1 รอบรับได้กี่คน (นวดพร้อมกันได้กี่เตียง)">
+      {data == null ? <Spinner /> : (
+        <>
+          <div className="flex items-center justify-center gap-3">
+            <button type="button" onClick={() => setBeds(Math.max(1, value - 1))} disabled={value <= 1} className="grid size-12 place-items-center rounded-xl border border-line text-ink hover:bg-sand disabled:opacity-40" aria-label="ลดเตียง"><Minus className="size-5" /></button>
+            <div className="w-28 text-center">
+              <div className="font-display text-4xl font-semibold tabular-nums text-herb">{value}</div>
+              <div className="flex items-center justify-center gap-1 text-[14px] text-muted"><BedDouble className="size-4" aria-hidden />เตียง / รอบ</div>
+            </div>
+            <button type="button" onClick={() => setBeds(Math.min(50, value + 1))} disabled={value >= 50} className="grid size-12 place-items-center rounded-xl border border-line text-ink hover:bg-sand disabled:opacity-40" aria-label="เพิ่มเตียง"><Plus className="size-5" /></button>
+          </div>
+          <p className="mt-3 text-center text-[14px] text-muted">ปกติเท่ากับจำนวนหมอนวดที่เข้าเวร · ถ้าลาเฉพาะวัน ให้ปรับรายรอบในตารางด้านล่าง</p>
+          {value !== data && (
+            <div className="mt-4 flex gap-2">
+              <Button variant="ghost" className="flex-1" onClick={() => setBeds(null)}>ยกเลิก</Button>
+              <Button icon={Save} className="flex-1" loading={saving} onClick={save}>บันทึก</Button>
+            </div>
+          )}
+        </>
+      )}
+    </Card>
+  );
+}
+
+// ---------------------------------------------------------------------
 // ตารางรายวัน
 // ---------------------------------------------------------------------
 function DaySlots() {
@@ -128,6 +190,11 @@ function DaySlots() {
 
   const unblock = async (slotIds) => {
     try { await staffApi('/admin/slots/unblock', { method: 'POST', body: { date, slot_ids: slotIds } }); toast('เปิดรับแล้ว'); reload(); }
+    catch (err) { toast(err.message, 'error'); }
+  };
+  /** ปรับเตียงเฉพาะรอบ (ต่ำกว่าคิวที่จองไว้ไม่ได้ — backend ตอบ BELOW_BOOKED) */
+  const setCapacity = async (s, capacity) => {
+    try { await staffApi(`/admin/slots/${s.slot_id}/capacity`, { method: 'PUT', body: { capacity } }); reload(); }
     catch (err) { toast(err.message, 'error'); }
   };
   const generate = async () => {
@@ -158,30 +225,49 @@ function DaySlots() {
         <>
           <ul className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
             {data.map((s) => (
-              <li key={s.slot_id} className={cx('flex items-center gap-3 rounded-xl border px-4 py-3', s.is_blocked ? 'border-transparent bg-sand' : 'border-line')}>
-                <div className="min-w-0 flex-1">
-                  <div className="font-display text-[18px] font-semibold">{hhmm(s.start_time)}–{hhmm(s.end_time)}</div>
-                  <div className="mt-0.5 flex flex-wrap items-center gap-2 text-[14px] text-muted">
-                    {s.availability === 'TAKEN' ? <><StatusBadge status={s.status} className="text-[13px]" />{s.first_name} {s.last_name}</>
-                      : s.availability === 'BLOCKED' ? <span className="text-clay">ปิดรับ{s.block_reason ? `: ${s.block_reason}` : ''}</span>
+              <li key={s.slot_id} className={cx('flex flex-col gap-2 rounded-xl border px-4 py-3', s.is_blocked || s.availability === 'HOLIDAY' ? 'border-transparent bg-sand' : 'border-line')}>
+                <div className="flex items-center gap-3">
+                  <div className="min-w-0 flex-1">
+                    <div className="font-display text-[18px] font-semibold">{hhmm(s.start_time)}–{hhmm(s.end_time)}</div>
+                    <div className="mt-0.5 text-[14px]">
+                      {s.availability === 'BLOCKED' ? <span className="text-clay">ปิดรับ{s.block_reason ? `: ${s.block_reason}` : ''}</span>
                         : s.availability === 'HOLIDAY' ? <span className="text-clay">วันหยุด</span>
-                          : <StatusBadge status="AVAILABLE" className="text-[13px]" />}
+                          : s.availability === 'FULL' ? <span className="font-medium text-clay">เต็ม</span>
+                            : <span className="text-herb">ว่าง {s.remaining} เตียง</span>}
+                    </div>
                   </div>
+                  {/* จำนวนเตียงของรอบนี้: ลด/เพิ่มได้ (ไม่ต่ำกว่าคิวที่จองแล้ว) */}
+                  <div className="flex items-center rounded-lg border border-line" title="จำนวนเตียงของรอบนี้">
+                    <button type="button" onClick={() => setCapacity(s, s.capacity - 1)} disabled={s.capacity <= Math.max(1, s.booked_count)} className="grid size-8 place-items-center text-muted hover:text-ink disabled:opacity-30" aria-label={`ลดเตียงรอบ ${hhmm(s.start_time)}`}><Minus className="size-4" /></button>
+                    <span className="min-w-12 text-center text-[14px] tabular-nums"><b>{s.booked_count}</b>/{s.capacity}</span>
+                    <button type="button" onClick={() => setCapacity(s, s.capacity + 1)} disabled={s.capacity >= 50} className="grid size-8 place-items-center text-muted hover:text-ink disabled:opacity-30" aria-label={`เพิ่มเตียงรอบ ${hhmm(s.start_time)}`}><Plus className="size-4" /></button>
+                  </div>
+                  {s.is_blocked ? (
+                    <button type="button" onClick={() => unblock([s.slot_id])} className="grid size-10 place-items-center rounded-lg text-clay hover:bg-paper" aria-label={`เปิดรับรอบ ${hhmm(s.start_time)}`} title="เปิดรับรอบนี้">
+                      <LockOpen className="size-5" />
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => setClosure({ title: `ปิดรับรอบ ${hhmm(s.start_time)}`, endpoint: '/admin/slots/block', body: { date, slot_ids: [s.slot_id] }, askReason: true })}
+                      className="grid size-10 place-items-center rounded-lg text-muted hover:bg-sand hover:text-ink"
+                      aria-label={`ปิดรับรอบ ${hhmm(s.start_time)}`}
+                      title="ปิดรับรอบนี้"
+                    >
+                      <Lock className="size-5" />
+                    </button>
+                  )}
                 </div>
-                {s.is_blocked ? (
-                  <button type="button" onClick={() => unblock([s.slot_id])} className="grid size-10 place-items-center rounded-lg text-clay hover:bg-paper" aria-label={`เปิดรับรอบ ${hhmm(s.start_time)}`} title="เปิดรับรอบนี้">
-                    <LockOpen className="size-5" />
-                  </button>
-                ) : (
-                  <button
-                    type="button"
-                    onClick={() => setClosure({ title: `ปิดรับรอบ ${hhmm(s.start_time)}`, endpoint: '/admin/slots/block', body: { date, slot_ids: [s.slot_id] }, askReason: true })}
-                    className="grid size-10 place-items-center rounded-lg text-muted hover:bg-sand hover:text-ink"
-                    aria-label={`ปิดรับรอบ ${hhmm(s.start_time)}`}
-                    title="ปิดรับรอบนี้"
-                  >
-                    <Lock className="size-5" />
-                  </button>
+                {s.appointments?.length > 0 && (
+                  <ul className="space-y-1 border-t border-line pt-2">
+                    {s.appointments.map((a) => (
+                      <li key={a.appointment_id} className="flex items-center gap-2 text-[14px]">
+                        <StatusBadge status={a.status} className="text-[12px]" />
+                        <span className="min-w-0 flex-1 truncate">{a.first_name} {a.last_name}</span>
+                        {a.service_name && <span className="truncate text-[13px] text-faint">{a.service_name}</span>}
+                      </li>
+                    ))}
+                  </ul>
                 )}
               </li>
             ))}

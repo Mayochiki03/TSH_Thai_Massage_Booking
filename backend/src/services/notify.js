@@ -29,6 +29,8 @@ export async function notifyAppointment(type, appointmentId, extraVars = {}) {
     date: thaiDate(a.slot_date),
     time: `${hhmm(a.start_time)}–${hhmm(a.end_time)} น.`,
     code: a.booking_code,
+    service: a.service_name ?? '',
+    price: a.service_price == null ? '' : `${Number(a.service_price).toLocaleString('th-TH')} บาท`,
     rebook_url: await patientUrl('/'),
     ...extraVars,
   };

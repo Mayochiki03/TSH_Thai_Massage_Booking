@@ -3,7 +3,12 @@
  *
  *  แท็บ "บัญชีผู้ใช้" : CRUD /api/admin/users, รีเซ็ตรหัสผ่าน (ผู้ใช้ต้องเปลี่ยนเองตอนล็อกอินครั้งถัดไป)
  *                      ผู้ดูแล (ADMIN) จัดการบัญชีนักพัฒนา (DEV) ไม่ได้ — backend บังคับอีกชั้น
- *  แท็บ "หมอนวด"     : CRUD /api/admin/practitioners (ปิดการใช้งาน = ไม่สร้างรอบให้หมอนวดคนนั้น)
+ *  แท็บ "หมอนวด"     : CRUD /api/admin/practitioners — รายชื่อคนที่ "นวด" (ใช้บันทึกว่าใครนวดคิวไหน + กรองรายงาน)
+ *                      ปิด "ปฏิบัติงาน" = ไม่โผล่ให้เลือกตอนเริ่มนวด (ประวัติเดิมยังอยู่)
+ *
+ *  หมอนวดจะล็อกอินเองได้ ต้องมี 2 อย่าง: (1) ชื่อในแท็บหมอนวด (2) บัญชีบทบาท "หมอนวด" ที่ผูกกับชื่อนั้น
+ *  → ล็อกอินที่ /staff แล้วเข้าหน้าห้องนวดทันที กด "รับคิวนี้และเริ่มนวด" ระบบบันทึกชื่อเขาให้เอง
+ *  จำนวนหมอนวดไม่ได้กำหนดจำนวนเตียง — ตั้งเตียงที่เมนู "รอบเวลาและเตียง"
  */
 import { useEffect, useState } from 'react';
 import { UserPlus, KeyRound, Pencil, Plus, Save } from 'lucide-react';
@@ -117,7 +122,7 @@ function UserSheet({ user, practitioners, isDev, onClose, onSaved }) {
           </Select>
         </Field>
         {form.role === 'PRACTITIONER' && (
-          <Field label="หมอนวด">
+          <Field label="ผูกกับหมอนวด" hint="กดเริ่มนวดจากบัญชีนี้ ระบบบันทึกเป็นชื่อหมอนวดคนนี้ (ไม่มีชื่อ → เพิ่มที่แท็บ หมอนวด ก่อน)">
             <Select value={form.practitioner_id ?? ''} onChange={set('practitioner_id')}>
               {practitioners.map((p) => <option key={p.practitioner_id} value={p.practitioner_id}>{p.full_name}</option>)}
             </Select>
@@ -153,6 +158,9 @@ function Practitioners() {
 
   return (
     <Card bodyClassName="p-0">
+      <p className="border-b border-line bg-ivory px-5 py-3 text-[14px] text-muted">
+        ให้หมอนวดล็อกอินเองได้: เพิ่มชื่อที่นี่ แล้วไปแท็บ <b>บัญชีผู้ใช้</b> → เพิ่มบัญชีบทบาท <b>หมอนวด</b> และผูกกับชื่อนี้
+      </p>
       <ul className="divide-y divide-line">
         {data.map((p, i) => (
           <li key={p.practitioner_id ?? `new-${i}`} className="grid gap-3 px-5 py-4 sm:grid-cols-[1fr_200px_auto_auto] sm:items-center">

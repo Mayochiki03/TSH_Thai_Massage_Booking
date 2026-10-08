@@ -1,16 +1,16 @@
 /**
  * pages/admin/Dashboard.jsx — ภาพรวมสำหรับผู้ดูแล (GET /api/admin/dashboard)
  *
- *  - วันนี้      : จำนวนคิวแยกตามสถานะ
- *  - 7 วันข้างหน้า: แถบความแน่นของคิวรายวัน (ถูกจอง / รอบทั้งหมด) — สีเดียว + ตัวเลขกำกับทุกแถว
- *  - 30 วันที่ผ่านมา: อัตรามาตามนัด / ไม่มา / ยกเลิก + เวลานวดเฉลี่ย
+ *  - วันนี้      : ที่ว่าง (เตียง × รอบ) + จำนวนคิวแยกตามสถานะ
+ *  - 7 วันข้างหน้า: แถบความแน่นของคิวรายวัน (ถูกจอง / ที่ทั้งหมด) — สีเดียว + ตัวเลขกำกับทุกแถว
+ *  - 30 วันที่ผ่านมา: อัตรามาตามนัด / ไม่มา / ยกเลิก + เวลานวดเฉลี่ย + รายได้ (เฉพาะคิวที่นวดเสร็จ ตามราคาตอนจอง)
  *  - ช่องทางการจอง: LINE / kiosk / เคาน์เตอร์ / จองแทน
  */
 import { Link } from 'react-router';
 import { CalendarOff, UserX, ArrowUpRight } from 'lucide-react';
 import { staffApi } from '../../lib/api.js';
 import { useLoad } from '../../lib/useLoad.js';
-import { thaiDateLong, todayYmd, weekdayShort, dayNum, monthShort, relativeDay } from '../../lib/format.js';
+import { thaiDateLong, todayYmd, weekdayShort, dayNum, monthShort, relativeDay, baht } from '../../lib/format.js';
 import { Card, PageHeader, Spinner, cx } from '../../components/ui.jsx';
 
 const CHANNEL_LABEL = { ONLINE: 'LINE', KIOSK: 'เครื่อง kiosk', WALK_IN: 'walk-in ที่เคาน์เตอร์', STAFF: 'เจ้าหน้าที่จองแทน' };
@@ -25,7 +25,7 @@ export function Dashboard() {
   const finished = (l.completed ?? 0) + (l.no_show ?? 0);
 
   const tiles = [
-    { label: 'รอบว่าง', value: t.available ?? 0 },
+    { label: 'ที่ว่าง (เตียง)', value: t.available ?? 0 },
     { label: 'รอเช็กอิน', value: t.booked ?? 0 },
     { label: 'มาถึงแล้ว / กำลังนวด', value: (t.checked_in ?? 0) + (t.in_service ?? 0) },
     { label: 'นวดเสร็จ', value: t.completed ?? 0 },
@@ -49,14 +49,14 @@ export function Dashboard() {
 
       <div className="mt-6 grid gap-6 lg:grid-cols-[1.4fr_1fr]">
         {/* 7 วันข้างหน้า */}
-        <Card title="ความแน่นของคิว 7 วันข้างหน้า" description="จำนวนคิวที่ถูกจองเทียบกับรอบทั้งหมดของแต่ละวัน">
+        <Card title="ความแน่นของคิว 7 วันข้างหน้า" description="จำนวนคิวที่ถูกจองเทียบกับที่ทั้งหมด (เตียง × รอบ) ของแต่ละวัน">
           {!data.next_days.length ? <p className="text-muted">ยังไม่มีรอบเวลาในช่วงนี้</p> : (
             <ul className="space-y-3">
               {data.next_days.map((d) => {
                 const open = d.slots - (d.blocked ?? 0);
                 const p = pct(d.booked, open);
                 return (
-                  <li key={d.date} className="grid grid-cols-[88px_1fr_64px] items-center gap-3 text-[15px]" title={`${d.booked} จาก ${open} รอบ`}>
+                  <li key={d.date} className="grid grid-cols-[88px_1fr_64px] items-center gap-3 text-[15px]" title={`${d.booked} จาก ${open} ที่`}>
                     <span>
                       <span className="font-medium">{relativeDay(d.date) ?? weekdayShort(d.date)}</span>{' '}
                       <span className="text-muted">{dayNum(d.date)} {monthShort(d.date)}</span>
@@ -84,6 +84,7 @@ export function Dashboard() {
               <div><dt className="text-muted">มาตามนัด</dt><dd className="font-display text-[22px] font-semibold">{pct(l.completed, finished)}%</dd></div>
               <div><dt className="text-muted">ไม่มาตามนัด</dt><dd className="font-display text-[22px] font-semibold text-clay">{l.no_show ?? 0} คิว</dd></div>
               <div><dt className="text-muted">ยกเลิก</dt><dd className="font-display text-[22px] font-semibold">{l.cancelled ?? 0} คิว</dd></div>
+              <div className="col-span-2"><dt className="text-muted">รายได้ (คิวที่นวดเสร็จ)</dt><dd className="font-display text-[22px] font-semibold text-herb">{baht(l.revenue ?? 0)}</dd></div>
               <div className="col-span-2"><dt className="text-muted">เวลานวดจริงเฉลี่ย</dt><dd className="font-display text-[22px] font-semibold">{l.avg_service_min ? `${l.avg_service_min} นาที` : 'ยังไม่มีข้อมูล'}</dd></div>
             </dl>
           </Card>

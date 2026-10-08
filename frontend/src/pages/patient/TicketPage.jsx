@@ -11,7 +11,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router';
 import { Phone, CalendarPlus, ListOrdered, CircleCheck, XCircle } from 'lucide-react';
 import { patientApi, sendTicketToChat, isLocalMode } from '../../lib/liff.js';
-import { thaiDateLong, relativeDay } from '../../lib/format.js';
+import { thaiDateLong, relativeDay, baht } from '../../lib/format.js';
 import { Button, Spinner, StatusBadge, Empty, useToast, useConfirm, cx } from '../../components/ui.jsx';
 import { usePatient } from './PatientApp.jsx';
 
@@ -139,6 +139,12 @@ export function TicketPage() {
               {t.relation && t.relation !== 'ตนเอง' && <span className="font-normal text-muted"> ({t.relation}ของคุณ)</span>}
             </dd>
           </div>
+          {t.service && (
+            <div>
+              <dt className="text-[14px] text-muted">บริการ</dt>
+              <dd className="text-[17px] font-medium">{t.service.name} <span className="font-normal text-muted">· {baht(t.service.price)}</span></dd>
+            </div>
+          )}
           {t.chief_complaint && (
             <div>
               <dt className="text-[14px] text-muted">อาการ</dt>

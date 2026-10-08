@@ -1,14 +1,19 @@
 /**
  * services/booking.js — กฎการจองทั้งหมดของระบบ (ใช้ร่วมกันทุกช่องทาง: LINE / kiosk / เคาน์เตอร์)
- *   getPublicAvailability   รอบว่างสำหรับผู้จองและ kiosk
- *   createBooking           จองใน transaction (กันจองซ้อน + ตรวจโควตา/ระงับสิทธิ์)
+ *   getPublicAvailability   รอบว่างสำหรับผู้จองและ kiosk (บอกจำนวนที่เหลือ)
+ *   listServiceTypes        ประเภทบริการที่เปิดให้เลือก + ราคา
+ *   createBooking           จองใน transaction (ล็อก slot → นับคิวเทียบจำนวนเตียง + ตรวจโควตา/ระงับสิทธิ์/เลขบัตร)
  *   cancel / confirm / checkIn / startService / completeService / saveServiceRecord   เปลี่ยนสถานะคิว
  *   affectedAppointments / closeSlotsAndCancel   ปิดรอบ/วันหยุด แล้วยกเลิกคิวที่จองไว้
+ *
+ * หลายเตียง: 1 รอบ (time_slots) รับได้ capacity คิว — ไม่ผูกกับหมอนวด
+ *   หมอนวดคนไหนว่างก็กด "เริ่มนวด" รับคิว → บันทึก appointments.practitioner_id ตอนนั้น
  */
 import { query, queryOne, withTx } from '../db.js';
 import { getSettings } from './settings.js';
 import { bookingCode } from '../utils/crypto.js';
 import { badRequest, conflict, forbidden, notFound } from '../utils/errors.js';
+import { applyNationalId, NID_REQUIRED_MSG } from './patients.js';
 
 const BOOKING_KEYS = [
   'max_per_day', 'max_per_week', 'advance_booking_days', 'allow_same_day', 'booking_cutoff_min',
@@ -16,6 +21,13 @@ const BOOKING_KEYS = [
 ];
 
 export const bookingRules = () => getSettings(BOOKING_KEYS);
+
+/** ประเภทบริการที่เปิดให้เลือก (ทุกช่องทางใช้รายการเดียวกัน) */
+export function listServiceTypes() {
+  return query(
+    'SELECT service_type_id, name, description, price FROM service_types WHERE is_active = TRUE ORDER BY sort_order, service_type_id',
+  ).then((rows) => rows.map((r) => ({ ...r, price: Number(r.price) })));
+}
 
 // ---------------------------------------------------------------------
 // ช่วงวันที่จองได้ + รอบว่าง (ฝั่งผู้จอง LINE และเครื่อง kiosk)
@@ -26,17 +38,16 @@ export const bookingRules = () => getSettings(BOOKING_KEYS);
  * @param {'ONLINE'|'KIOSK'} [channel='ONLINE']
  *   ONLINE: เริ่มวันนี้ (ถ้า allow_same_day) หรือพรุ่งนี้, รอบที่เหลือเวลาน้อยกว่า booking_cutoff_min = ปิดรับ
  *   KIOSK : เริ่มวันนี้เสมอ, รอบที่เริ่มไปแล้วไม่เกิน no_show_after_min นาทียังรับได้ (คนมายืนอยู่หน้าคลินิกแล้ว)
- * @returns {Promise<Array<{date: string, slots: Array<{slot_id:number,start_time:string,end_time:string,status:'AVAILABLE'|'UNAVAILABLE'|'HOLIDAY'}>}>>}
+ * @returns {Promise<Array<{date: string, slots: Array<{slot_id:number,start_time:string,end_time:string,status:'AVAILABLE'|'UNAVAILABLE'|'HOLIDAY',remaining:number,capacity:number}>}>>}
  */
 export async function getPublicAvailability(channel = 'ONLINE') {
   const r = await bookingRules();
   const kiosk = channel === 'KIOSK';
   const minDay = kiosk || r.allow_same_day ? 0 : 1;
   const rows = await query(
-    `SELECT v.slot_id, v.slot_date, v.start_time, v.end_time, v.availability,
+    `SELECT v.slot_id, v.slot_date, v.start_time, v.end_time, v.availability, v.capacity, v.remaining,
             TIMESTAMPDIFF(MINUTE, NOW(), TIMESTAMP(v.slot_date, v.start_time)) AS mins_until
        FROM v_slot_availability v
-       JOIN practitioners pr ON pr.practitioner_id = v.practitioner_id AND pr.is_active = TRUE
       WHERE v.slot_date BETWEEN CURDATE() + INTERVAL ? DAY AND CURDATE() + INTERVAL ? DAY
       ORDER BY v.slot_date, v.start_time`,
     [minDay, r.advance_booking_days],
@@ -45,14 +56,16 @@ export async function getPublicAvailability(channel = 'ONLINE') {
   const days = new Map();
   for (const s of rows) {
     if (!open.has(isoWeekday(s.slot_date))) continue;
-    let status = s.availability; // AVAILABLE / TAKEN / BLOCKED / HOLIDAY
+    let status = s.availability; // AVAILABLE / FULL / BLOCKED / HOLIDAY
     const tooLate = kiosk ? s.mins_until < -r.no_show_after_min : s.mins_until < r.booking_cutoff_min;
     if (status === 'AVAILABLE' && tooLate) status = 'CLOSED';
     if (!days.has(s.slot_date)) days.set(s.slot_date, []);
     days.get(s.slot_date).push({
       slot_id: s.slot_id, start_time: s.start_time.slice(0, 5), end_time: s.end_time.slice(0, 5),
-      // ผู้จองเห็นแค่ ว่าง / ไม่ว่าง / วันหยุด (ไม่บอกว่าใครจอง)
+      // ผู้จองเห็นแค่ ว่าง (เหลือกี่ที่) / ไม่ว่าง / วันหยุด (ไม่บอกว่าใครจอง)
       status: status === 'AVAILABLE' ? 'AVAILABLE' : status === 'HOLIDAY' ? 'HOLIDAY' : 'UNAVAILABLE',
+      remaining: status === 'AVAILABLE' ? Number(s.remaining) : 0,
+      capacity: Number(s.capacity),
     });
   }
   return [...days.entries()].map(([date, slots]) => ({ date, slots }));
@@ -72,10 +85,12 @@ function isoWeekday(ymd) {
  *
  * ลำดับการตรวจ (ล้มข้อไหน throw HttpError ทันที → rollback ทั้งหมด):
  *   1. ล็อกแถว slot (FOR UPDATE) → ตรวจวันหยุด / บล็อก / ช่วงเวลาที่จองได้ตามช่องทาง
- *   2. slot มีคิว active แล้วหรือยัง (SLOT_TAKEN)
- *   3. ล็อกแถวผู้รับบริการ → ตรวจระงับสิทธิ์ (SUSPENDED)
- *   4. ตรวจโควตาวัน/สัปดาห์ (QUOTA_DAY / QUOTA_WEEK)
- *   5. INSERT — ถ้ามี request อื่นแทรกได้ uq_active_slot จะกันอีกชั้น
+ *   2. นับคิวที่ยังกินที่ในรอบนี้ เทียบ capacity (SLOT_TAKEN = เต็ม)
+ *      request อื่นที่จองรอบเดียวกันต้องรอ lock ข้อ 1 → นับแล้วจองทีละคน ไม่มีทางเกินจำนวนเตียง
+ *   3. ประเภทบริการต้องเปิดใช้งาน → เก็บราคา ณ ตอนจอง
+ *   4. ล็อกแถวผู้รับบริการ → เลขบัตร (NID_REQUIRED) / จองรอบเดียวกันซ้ำ / ระงับสิทธิ์ (SUSPENDED)
+ *   5. ตรวจโควตาวัน/สัปดาห์ (QUOTA_DAY / QUOTA_WEEK)
+ *   6. INSERT
  *
  * กฎตามช่องทาง:
  *   ONLINE  (LINE)          : วันเปิดทำการ, ช่วงจองล่วงหน้า, ปิดรับก่อนนัด booking_cutoff_min
@@ -86,6 +101,8 @@ function isoWeekday(ymd) {
  * @param {object} p
  * @param {number} p.patientId         ผู้รับบริการ
  * @param {number} p.slotId            รอบเวลา
+ * @param {number} p.serviceTypeId     ประเภทบริการ
+ * @param {{national_id?: string, no_national_id?: boolean}} [p.identity]  เลขบัตร (ถ้าผู้รับบริการเดิมยังไม่เคยกรอก)
  * @param {string} [p.chiefComplaint]  อาการเบื้องต้น
  * @param {'ONLINE'|'WALK_IN'|'STAFF'|'KIOSK'} p.channel
  * @param {string} [p.lineUserId]      ผู้จอง (ONLINE)
@@ -103,20 +120,18 @@ export async function createBooking(p) {
   const appointmentId = await withTx(async (conn) => {
     // 1) ล็อก slot แถวนี้ — request ที่จอง slot เดียวกันจะต่อคิวกัน
     const [[slot]] = await conn.query(
-      `SELECT s.*, pr.is_active AS practitioner_active, h.name AS holiday_name,
+      `SELECT s.*, h.name AS holiday_name,
               TIMESTAMPDIFF(MINUTE, NOW(), TIMESTAMP(s.slot_date, s.start_time)) AS mins_until,
               TIMESTAMPDIFF(MINUTE, NOW(), TIMESTAMP(s.slot_date, s.end_time))   AS mins_until_end,
               DATEDIFF(s.slot_date, CURDATE()) AS days_ahead,
               WEEKDAY(s.slot_date) + 1 AS wd
          FROM time_slots s
-         JOIN practitioners pr ON pr.practitioner_id = s.practitioner_id
          LEFT JOIN holidays h  ON h.holiday_date = s.slot_date
         WHERE s.slot_id = ?
         FOR UPDATE OF s`,
       [p.slotId],
     );
     if (!slot) throw notFound('ไม่พบรอบเวลานี้');
-    if (!slot.practitioner_active) throw conflict('SLOT_UNAVAILABLE', 'รอบนี้ไม่เปิดให้บริการ');
     if (slot.holiday_name) throw conflict('HOLIDAY', `วันนี้เป็นวันหยุด (${slot.holiday_name})`);
     if (slot.is_blocked) throw conflict('SLOT_BLOCKED', `รอบนี้ปิดรับ${slot.block_reason ? ` (${slot.block_reason})` : ''}`);
 
@@ -136,17 +151,31 @@ export async function createBooking(p) {
       if (slot.mins_until < r.booking_cutoff_min) throw conflict('CUTOFF', `ปิดรับจองก่อนเวลานัด ${r.booking_cutoff_min} นาที`);
     }
 
-    // 1.1) slot มีคนจองอยู่แล้ว → แจ้งทันที (ก่อนเช็กโควตา ให้ข้อความตรงกับสาเหตุจริง)
-    const [[taken]] = await conn.query('SELECT 1 AS x FROM appointments WHERE active_slot_id = ?', [p.slotId]);
-    if (taken) throw conflict('SLOT_TAKEN', 'รอบนี้มีผู้จองแล้ว กรุณาเลือกรอบอื่น');
+    // 2) รอบเต็มหรือยัง (นับภายใต้ lock ของ slot → ไม่มีทางจองเกินจำนวนเตียง)
+    const [[{ used }]] = await conn.query('SELECT COUNT(*) AS used FROM appointments WHERE active_slot_id = ?', [p.slotId]);
+    if (Number(used) >= slot.capacity) {
+      throw conflict('SLOT_TAKEN', slot.capacity > 1 ? 'รอบนี้เต็มแล้ว กรุณาเลือกรอบอื่น' : 'รอบนี้มีผู้จองแล้ว กรุณาเลือกรอบอื่น');
+    }
 
-    // 2) ล็อกผู้รับบริการ — กันกดจองซ้ำพร้อมกันจนเกินโควตา
+    // 3) ประเภทบริการ → เก็บราคา ณ ตอนจอง
+    const [[service]] = await conn.query('SELECT service_type_id, price FROM service_types WHERE service_type_id = ? AND is_active = TRUE', [p.serviceTypeId]);
+    if (!service) throw badRequest('SERVICE_TYPE', 'กรุณาเลือกประเภทบริการ', { fields: { service_type_id: ['กรุณาเลือกประเภทบริการ'] } });
+
+    // 4) ล็อกผู้รับบริการ — กันกดจองซ้ำพร้อมกันจนเกินโควตา
+    if (p.identity) await applyNationalId(conn, p.patientId, p.identity);
     const [[patient]] = await conn.query(
-      'SELECT patient_id, is_deleted FROM patients WHERE patient_id = ? FOR UPDATE', [p.patientId],
+      'SELECT patient_id, is_deleted, national_id_hash, no_national_id FROM patients WHERE patient_id = ? FOR UPDATE', [p.patientId],
     );
     if (!patient || patient.is_deleted) throw notFound('ไม่พบข้อมูลผู้รับบริการ');
+    // เลขบัตรประชาชนของผู้รับบริการ (บังคับ) — ใส่มาพร้อมการจองได้ถ้ายังไม่เคยกรอก
+    if (!patient.national_id_hash && !patient.no_national_id) {
+      throw conflict('NID_REQUIRED', NID_REQUIRED_MSG, { patient_id: p.patientId, fields: { national_id: [NID_REQUIRED_MSG] } });
+    }
+    // คนเดียวกันจองรอบเดียวกันซ้ำ (มีหลายเตียงจึงต้องตรวจเอง)
+    const [[dup]] = await conn.query('SELECT 1 AS x FROM appointments WHERE active_slot_id = ? AND patient_id = ?', [p.slotId, p.patientId]);
+    if (dup) throw conflict('DUPLICATE', 'ผู้รับบริการคนนี้จองรอบนี้ไว้แล้ว');
 
-    // 3) ระงับสิทธิ์
+    // ระงับสิทธิ์
     const [[susp]] = await conn.query(
       `SELECT end_date FROM patient_suspensions
         WHERE patient_id = ? AND lifted_at IS NULL AND CURDATE() BETWEEN start_date AND end_date
@@ -157,7 +186,7 @@ export async function createBooking(p) {
       throw conflict('SUSPENDED', `ผู้รับบริการถูกระงับสิทธิ์การจองถึงวันที่ ${susp.end_date}`, { end_date: susp.end_date, can_force: isStaff });
     }
 
-    // 4) โควตา (นับทุกสถานะ ยกเว้น CANCELLED)
+    // 5) โควตา (นับทุกสถานะ ยกเว้น CANCELLED)
     const [[q]] = await conn.query(
       `SELECT COALESCE(SUM(s.slot_date = ?), 0) AS day_count, COUNT(*) AS week_count
          FROM appointments a JOIN time_slots s ON s.slot_id = a.slot_id
@@ -174,18 +203,18 @@ export async function createBooking(p) {
       }
     }
 
-    // 5) INSERT — uq_active_slot กันจองซ้อนอีกชั้น / สุ่มรหัสใหม่ถ้ารหัสชน
+    // 6) INSERT — สุ่มรหัสใหม่ถ้ารหัสชน
     const autoCheckIn = p.channel === 'WALK_IN' || (isKiosk && slot.mins_until <= r.checkin_early_min);
     for (let attempt = 0; attempt < 5; attempt++) {
       try {
         const [res] = await conn.query(
           `INSERT INTO appointments
              (booking_code, patient_id, booked_by_line_user_id, booked_by_staff, booker_relation,
-              slot_id, booking_channel, chief_complaint, status, checked_in_at, checked_in_by)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+              slot_id, booking_channel, chief_complaint, service_type_id, service_price, status, checked_in_at, checked_in_by)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
           [
             bookingCode(), p.patientId, p.lineUserId ?? null, p.staffId ?? null, p.relation ?? null,
-            p.slotId, p.channel, p.chiefComplaint || null,
+            p.slotId, p.channel, p.chiefComplaint || null, service.service_type_id, service.price,
             // walk-in มาถึงแล้ว → เช็กอินให้เลย / kiosk เช็กอินให้ถ้าใกล้เวลานัด
             autoCheckIn ? 'CHECKED_IN' : 'BOOKED',
             autoCheckIn ? new Date() : null,
@@ -194,9 +223,6 @@ export async function createBooking(p) {
         );
         return res.insertId;
       } catch (err) {
-        if (err.code === 'ER_DUP_ENTRY' && err.message.includes('uq_active_slot')) {
-          throw conflict('SLOT_TAKEN', 'รอบนี้เพิ่งถูกจองไป กรุณาเลือกรอบอื่น');
-        }
         if (err.code === 'ER_DUP_ENTRY' && err.message.includes('uq_booking_code')) continue;
         throw err;
       }
@@ -268,8 +294,9 @@ export async function cancelByStaff(appointmentId, staffId, reason) {
 
 /**
  * เช็กอิน — คืน warning ถ้ามาเร็ว/สายเกินกำหนด (เจ้าหน้าที่กด force เพื่อยืนยันได้)
+ * @param {string|null} [vn] VN ที่เคาน์เตอร์ได้จากระบบโรงพยาบาล (ไม่บังคับ — หมอนวดกรอกทีหลังได้)
  */
-export async function checkIn(appt, staffId, force = false) {
+export async function checkIn(appt, staffId, force = false, vn = undefined) {
   if (appt.status !== 'BOOKED') {
     throw conflict('INVALID_STATUS', appt.status === 'CHECKED_IN' ? 'เช็กอินไปแล้ว' : 'คิวนี้เช็กอินไม่ได้');
   }
@@ -285,13 +312,21 @@ export async function checkIn(appt, staffId, force = false) {
     }
   }
   await transition(appt.appointment_id, ['BOOKED'],
-    "status = 'CHECKED_IN', checked_in_at = NOW(), checked_in_by = ?", [staffId], 'เช็กอินไม่สำเร็จ');
+    "status = 'CHECKED_IN', checked_in_at = NOW(), checked_in_by = ?, vn = COALESCE(?, vn)", [staffId, vn ?? null], 'เช็กอินไม่สำเร็จ');
 }
 
-export async function startService(appointmentId, staffId) {
+/**
+ * เริ่มนวด — บันทึกว่าหมอนวดคนไหนรับคิวนี้
+ * @param {number} practitionerId หมอนวด (บัญชีหมอนวด = ตัวเอง, แอดมินเลือกให้)
+ */
+export async function startService(appointmentId, staffId, practitionerId) {
+  if (!practitionerId) throw badRequest('PRACTITIONER_REQUIRED', 'กรุณาเลือกหมอนวด');
+  const pr = await queryOne('SELECT practitioner_id FROM practitioners WHERE practitioner_id = ? AND is_active = TRUE', [practitionerId]);
+  if (!pr) throw badRequest('PRACTITIONER_REQUIRED', 'ไม่พบหมอนวดนี้ หรือถูกปิดการใช้งาน');
   await withTx(async (conn) => {
     const [res] = await conn.query(
-      "UPDATE appointments SET status = 'IN_SERVICE' WHERE appointment_id = ? AND status = 'CHECKED_IN'", [appointmentId],
+      "UPDATE appointments SET status = 'IN_SERVICE', practitioner_id = ? WHERE appointment_id = ? AND status = 'CHECKED_IN'",
+      [practitionerId, appointmentId],
     );
     if (res.affectedRows === 0) throw conflict('INVALID_STATUS', 'ต้องเช็กอินก่อนจึงเริ่มบริการได้');
     await conn.query(
@@ -302,12 +337,30 @@ export async function startService(appointmentId, staffId) {
   });
 }
 
+/**
+ * ข้อมูลประกอบคิวที่หมอนวด/เคาน์เตอร์แก้ได้ระหว่างให้บริการ: VN และประเภทบริการ (เปลี่ยนประเภท → ราคาตามปัจจุบัน)
+ * ส่งเฉพาะค่าที่ต้องการแก้ (undefined = ไม่แตะ)
+ */
+export async function updateVisitInfo(conn, appointmentId, { vn, service_type_id: serviceTypeId } = {}) {
+  if (vn !== undefined) await conn.query('UPDATE appointments SET vn = ? WHERE appointment_id = ?', [vn, appointmentId]);
+  if (serviceTypeId) {
+    const [[st]] = await conn.query('SELECT price FROM service_types WHERE service_type_id = ? AND is_active = TRUE', [serviceTypeId]);
+    if (!st) throw badRequest('SERVICE_TYPE', 'ไม่พบประเภทบริการนี้');
+    await conn.query(
+      // MySQL ประเมิน SET จากซ้ายไปขวา → ต้องคำนวณราคาก่อนเปลี่ยน service_type_id (ประเภทเดิม = คงราคาเดิม)
+      'UPDATE appointments SET service_price = IF(service_type_id <=> ?, service_price, ?), service_type_id = ? WHERE appointment_id = ?',
+      [serviceTypeId, st.price, serviceTypeId, appointmentId],
+    );
+  }
+}
+
 export async function completeService(appointmentId, staffId, record = {}) {
   await withTx(async (conn) => {
     const [res] = await conn.query(
       "UPDATE appointments SET status = 'COMPLETED' WHERE appointment_id = ? AND status = 'IN_SERVICE'", [appointmentId],
     );
     if (res.affectedRows === 0) throw conflict('INVALID_STATUS', 'คิวนี้ยังไม่ได้เริ่มบริการ');
+    await updateVisitInfo(conn, appointmentId, record);
     await conn.query(
       `INSERT INTO service_records (appointment_id, service_end, treatment_details, post_treatment_note, recorded_by)
        VALUES (?, NOW(), ?, ?, ?)
@@ -324,6 +377,7 @@ export async function saveServiceRecord(appointmentId, staffId, record) {
   const appt = await queryOne('SELECT status FROM appointments WHERE appointment_id = ?', [appointmentId]);
   if (!appt) throw notFound();
   if (!['IN_SERVICE', 'COMPLETED'].includes(appt.status)) throw badRequest('INVALID_STATUS', 'บันทึกผลได้หลังเริ่มบริการแล้ว');
+  await withTx((conn) => updateVisitInfo(conn, appointmentId, record));
   await query(
     `INSERT INTO service_records (appointment_id, treatment_details, post_treatment_note, recorded_by)
      VALUES (?, ?, ?, ?)

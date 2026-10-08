@@ -54,3 +54,6 @@ export const STATUS = {
 };
 
 export const RELATIONS = ['มารดา', 'บิดา', 'คู่สมรส', 'บุตร', 'ญาติ', 'อื่น ๆ'];
+
+/** 300 → '300 บาท' (ไม่มีทศนิยมถ้าเป็นจำนวนเต็ม) */
+export const baht = (n) => (n == null ? '' : `${Number(n).toLocaleString('th-TH', { maximumFractionDigits: 2 })} บาท`);

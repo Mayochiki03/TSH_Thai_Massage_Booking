@@ -2,7 +2,8 @@
  * routes/admin.js — API ผู้ดูแลระบบ (/api/admin/*, role ADMIN และ DEV)
  *   dashboard · settings (ยกเว้นหมวดการเชื่อมต่อ) · slot-templates · slots (ปิด/เปิดรับ)
  *   holidays · practitioners · users · patients · line-users · appointments · suspensions
- *   notification-templates · notification-logs · audit-logs
+ *   notification-templates · notification-logs · audit-logs · reports (ส่งออก Excel)
+ *   service-types (ประเภทบริการ + ราคา) · bed_count / slots/:id/capacity (จำนวนเตียง)
  * ทุกการแก้ไขบันทึก audit log
  */
 import { Router } from 'express';
@@ -12,11 +13,15 @@ import { query, queryOne, withTx } from '../db.js';
 import { ah, badRequest, conflict, notFound } from '../utils/errors.js';
 import { requireRole } from '../middleware/auth.js';
 import { listSettingsForAdmin, updateSetting, getSetting } from '../services/settings.js';
-import { affectedAppointments, closeSlotsAndCancel } from '../services/booking.js';
+import { affectedAppointments, closeSlotsAndCancel, updateVisitInfo } from '../services/booking.js';
 import { notifyAppointment } from '../services/notify.js';
 import { generateSlots } from '../jobs/cron.js';
 import { audit } from '../services/audit.js';
-import { patientInput, idParam, dateStr, timeStr } from './schemas.js';
+import { buildBookingReport } from '../services/report.js';
+import { patientInput, idParam, dateStr, timeStr, vnInput, nationalIdInput } from './schemas.js';
+import { setNationalId } from '../services/patients.js';
+import { revealThaiId, maskThaiId } from '../utils/nationalId.js';
+import { nidSearchHash } from './staff.js';
 
 export const adminRouter = Router();
 adminRouter.use(requireRole('ADMIN'));
@@ -41,37 +46,42 @@ const page = (req) => {
 adminRouter.get('/dashboard', ah(async (_req, res) => {
   const toNum = (o) => Object.fromEntries(Object.entries(o).map(([k, v]) => [k, v == null ? null : Number(v)]));
 
-  const today = await queryOne(
-    `SELECT COUNT(s.slot_id) AS slots,
-            SUM(a.status = 'BOOKED')     AS booked,
+  // นับเป็น "ที่" (เตียง × รอบ) ไม่ใช่จำนวนรอบ
+  const todaySlots = await queryOne(
+    `SELECT COALESCE(SUM(capacity), 0) AS slots,
+            COALESCE(SUM(IF(availability IN ('AVAILABLE','FULL'), remaining, 0)), 0) AS available
+       FROM v_slot_availability WHERE slot_date = CURDATE()`,
+  );
+  const todayActive = await queryOne(
+    `SELECT SUM(a.status = 'BOOKED')     AS booked,
             SUM(a.status = 'CHECKED_IN') AS checked_in,
             SUM(a.status = 'IN_SERVICE') AS in_service,
-            SUM(a.status = 'COMPLETED')  AS completed,
-            SUM(a.appointment_id IS NULL AND s.is_blocked = FALSE) AS available
-       FROM time_slots s LEFT JOIN appointments a ON a.active_slot_id = s.slot_id
-      WHERE s.slot_date = CURDATE()`,
+            SUM(a.status = 'COMPLETED')  AS completed
+       FROM appointments a JOIN time_slots s ON s.slot_id = a.slot_id
+      WHERE s.slot_date = CURDATE() AND a.active_slot_id IS NOT NULL`,
   );
+  const today = { ...todaySlots, ...todayActive };
   const todayInactive = await queryOne(
     `SELECT SUM(a.status = 'NO_SHOW') AS no_show, SUM(a.status = 'CANCELLED') AS cancelled
        FROM appointments a JOIN time_slots s ON s.slot_id = a.slot_id WHERE s.slot_date = CURDATE()`,
   );
   const nextDays = await query(
-    `SELECT s.slot_date AS date, COUNT(*) AS slots,
-            SUM(a.appointment_id IS NOT NULL) AS booked,
-            SUM(s.is_blocked) AS blocked,
+    `SELECT v.slot_date AS date, SUM(v.capacity) AS slots,
+            SUM(v.booked_count) AS booked,
+            SUM(IF(v.is_blocked, v.capacity, 0)) AS blocked,
             MAX(h.name) AS holiday
-       FROM time_slots s
-       LEFT JOIN appointments a ON a.active_slot_id = s.slot_id
-       LEFT JOIN holidays h ON h.holiday_date = s.slot_date
-      WHERE s.slot_date BETWEEN CURDATE() AND CURDATE() + INTERVAL 6 DAY
-      GROUP BY s.slot_date ORDER BY s.slot_date`,
+       FROM v_slot_availability v
+       LEFT JOIN holidays h ON h.holiday_date = v.slot_date
+      WHERE v.slot_date BETWEEN CURDATE() AND CURDATE() + INTERVAL 6 DAY
+      GROUP BY v.slot_date ORDER BY v.slot_date`,
   );
   const last30 = await queryOne(
     `SELECT COUNT(*) AS total,
             SUM(a.status = 'COMPLETED') AS completed,
             SUM(a.status = 'NO_SHOW')   AS no_show,
             SUM(a.status = 'CANCELLED') AS cancelled,
-            ROUND(AVG(TIMESTAMPDIFF(MINUTE, sr.service_start, sr.service_end)), 0) AS avg_service_min
+            ROUND(AVG(TIMESTAMPDIFF(MINUTE, sr.service_start, sr.service_end)), 0) AS avg_service_min,
+            SUM(IF(a.status = 'COMPLETED', a.service_price, 0)) AS revenue
        FROM appointments a JOIN time_slots s ON s.slot_id = a.slot_id
        LEFT JOIN service_records sr ON sr.appointment_id = a.appointment_id
       WHERE s.slot_date BETWEEN CURDATE() - INTERVAL 30 DAY AND CURDATE() - INTERVAL 1 DAY`,
@@ -107,15 +117,90 @@ adminRouter.get('/settings', ah(async (_req, res) => {
 adminRouter.put('/settings', ah(async (req, res) => {
   const body = z.record(z.string(), z.any()).parse(req.body);
   const current = await listSettingsForAdmin();
+  if (body.bed_count !== undefined) {
+    body.bed_count = z.coerce.number().int().min(1, 'อย่างน้อย 1 เตียง').max(50, 'ไม่เกิน 50 เตียง').parse(body.bed_count);
+  }
   for (const [key, value] of Object.entries(body)) {
     const row = current.find((s) => s.key === key);
     if (!row) throw badRequest('UNKNOWN_SETTING', `ไม่รู้จักค่าตั้งค่า ${key}`);
     if (row.category === 'CONNECTION') throw badRequest('DEV_ONLY', 'ค่าการเชื่อมต่อแก้ได้ที่เมนูนักพัฒนา');
     await updateSetting(key, value);
   }
-  await audit(req, 'UPDATE', 'settings', null, { keys: Object.keys(body) });
+  let slotsUpdated;
+  if (body.bed_count !== undefined) slotsUpdated = await applyBedCount(body.bed_count);
+  await audit(req, 'UPDATE', 'settings', null, { keys: Object.keys(body), slots_updated: slotsUpdated });
   const all = await listSettingsForAdmin();
   res.json({ settings: all.filter((s) => s.category !== 'CONNECTION') });
+}));
+
+/**
+ * เปลี่ยนจำนวนเตียง → ปรับทุกรอบตั้งแต่วันนี้เป็นต้นไป
+ * รอบที่มีคิวมากกว่าจำนวนใหม่ จะคง capacity = จำนวนคิวที่มี (ไม่ยกเลิกคิวใคร)
+ */
+async function applyBedCount(beds) {
+  const r = await query(
+    `UPDATE time_slots s
+       LEFT JOIN (SELECT active_slot_id AS sid, COUNT(*) AS n FROM appointments
+                   WHERE active_slot_id IS NOT NULL GROUP BY active_slot_id) a ON a.sid = s.slot_id
+        SET s.capacity = LEAST(50, GREATEST(?, COALESCE(a.n, 0)))
+      WHERE s.slot_date >= CURDATE()`,
+    [beds],
+  );
+  return r.affectedRows;
+}
+
+// =====================================================================
+// ประเภทบริการ (นวดแผนไทย / นวดประคบ ...) + ราคา
+// =====================================================================
+const serviceTypeBody = z.object({
+  name: z.string().trim().min(1, 'กรุณากรอกชื่อ').max(100),
+  description: z.string().trim().max(255).optional().nullable(),
+  price: z.coerce.number().min(0, 'ราคาต้องไม่ติดลบ').max(100000),
+  sort_order: z.coerce.number().int().default(0),
+  is_active: z.boolean().default(true),
+});
+
+adminRouter.get('/service-types', ah(async (_req, res) => {
+  const rows = await query(
+    `SELECT st.*, (SELECT COUNT(*) FROM appointments a WHERE a.service_type_id = st.service_type_id) AS used
+       FROM service_types st ORDER BY st.sort_order, st.service_type_id`,
+  );
+  res.json({ service_types: rows.map((r) => ({ ...r, price: Number(r.price), used: Number(r.used), is_active: !!r.is_active })) });
+}));
+
+adminRouter.post('/service-types', ah(async (req, res) => {
+  const b = serviceTypeBody.parse(req.body);
+  const r = await query('INSERT INTO service_types (name, description, price, sort_order, is_active) VALUES (?, ?, ?, ?, ?)',
+    [b.name, b.description ?? null, b.price, b.sort_order, b.is_active]);
+  await audit(req, 'CREATE', 'service_types', r.insertId, b);
+  res.status(201).json({ service_type_id: r.insertId });
+}));
+
+/** แก้ราคา → มีผลกับการจองใหม่เท่านั้น (คิวเดิมเก็บราคาตอนจองไว้แล้ว) */
+adminRouter.put('/service-types/:id', ah(async (req, res) => {
+  const id = idParam.parse(req.params.id);
+  const b = serviceTypeBody.parse(req.body);
+  if (!b.is_active) {
+    const others = await queryOne('SELECT COUNT(*) AS n FROM service_types WHERE is_active = TRUE AND service_type_id <> ?', [id]);
+    if (!Number(others.n)) throw conflict('LAST_ACTIVE', 'ต้องเปิดใช้งานอย่างน้อย 1 ประเภท');
+  }
+  const r = await query('UPDATE service_types SET name = ?, description = ?, price = ?, sort_order = ?, is_active = ? WHERE service_type_id = ?',
+    [b.name, b.description ?? null, b.price, b.sort_order, b.is_active, id]);
+  if (!r.affectedRows) throw notFound();
+  await audit(req, 'UPDATE', 'service_types', id, b);
+  res.json({ ok: true });
+}));
+
+/** ลบได้เฉพาะประเภทที่ยังไม่เคยถูกจอง (ที่เคยใช้แล้ว → ปิดการใช้งานแทน เพื่อให้รายงานย้อนหลังยังมีชื่อ) */
+adminRouter.delete('/service-types/:id', ah(async (req, res) => {
+  const id = idParam.parse(req.params.id);
+  const used = await queryOne('SELECT COUNT(*) AS n FROM appointments WHERE service_type_id = ?', [id]);
+  if (Number(used.n)) throw conflict('IN_USE', 'ประเภทนี้เคยถูกจองแล้ว ลบไม่ได้ ให้ปิดการใช้งานแทน');
+  const others = await queryOne('SELECT COUNT(*) AS n FROM service_types WHERE is_active = TRUE AND service_type_id <> ?', [id]);
+  if (!Number(others.n)) throw conflict('LAST_ACTIVE', 'ต้องเหลือประเภทที่เปิดใช้งานอย่างน้อย 1 ประเภท');
+  await query('DELETE FROM service_types WHERE service_type_id = ?', [id]);
+  await audit(req, 'DELETE', 'service_types', id);
+  res.json({ ok: true });
 }));
 
 // =====================================================================
@@ -185,13 +270,37 @@ adminRouter.get('/slots', ah(async (req, res) => {
   const from = dateStr.parse(req.query.from);
   const to = dateStr.parse(req.query.to ?? req.query.from);
   const rows = await query(
-    `SELECT v.*, p.first_name, p.last_name FROM v_slot_availability v
-       LEFT JOIN appointments a ON a.appointment_id = v.appointment_id
-       LEFT JOIN patients p ON p.patient_id = a.patient_id
-      WHERE v.slot_date BETWEEN ? AND ? ORDER BY v.slot_date, v.start_time`,
+    'SELECT * FROM v_slot_availability WHERE slot_date BETWEEN ? AND ? ORDER BY slot_date, start_time',
     [from, to],
   );
-  res.json({ slots: rows });
+  const appts = await query(
+    `SELECT appointment_id, slot_id, booking_code, status, first_name, last_name, service_name
+       FROM v_appointment_details
+      WHERE slot_date BETWEEN ? AND ? AND status NOT IN ('CANCELLED','NO_SHOW')
+      ORDER BY created_at`,
+    [from, to],
+  );
+  res.json({
+    slots: rows.map((r) => ({
+      ...r, booked_count: Number(r.booked_count), remaining: Number(r.remaining),
+      appointments: appts.filter((a) => a.slot_id === r.slot_id),
+    })),
+  });
+}));
+
+/** ปรับจำนวนเตียงของรอบเดียว (เช่น วันนี้หมอนวดลา 1 คน) — ต่ำกว่าจำนวนคิวที่จองแล้วไม่ได้ */
+adminRouter.put('/slots/:id/capacity', ah(async (req, res) => {
+  const id = idParam.parse(req.params.id);
+  const capacity = z.coerce.number().int().min(1, 'อย่างน้อย 1 เตียง').max(50).parse(req.body?.capacity);
+  await withTx(async (conn) => {
+    const [[slot]] = await conn.query('SELECT slot_id FROM time_slots WHERE slot_id = ? FOR UPDATE', [id]);
+    if (!slot) throw notFound();
+    const [[{ n }]] = await conn.query('SELECT COUNT(*) AS n FROM appointments WHERE active_slot_id = ?', [id]);
+    if (capacity < Number(n)) throw conflict('BELOW_BOOKED', `รอบนี้มีคิวแล้ว ${n} คิว ลดจำนวนเตียงให้ต่ำกว่านี้ไม่ได้ (ยกเลิกคิวก่อน)`);
+    await conn.query('UPDATE time_slots SET capacity = ? WHERE slot_id = ?', [capacity, id]);
+  });
+  await audit(req, 'SET_CAPACITY', 'time_slots', id, { capacity });
+  res.json({ ok: true });
 }));
 
 /**
@@ -407,8 +516,8 @@ adminRouter.get('/patients', ah(async (req, res) => {
   const { limit, offset } = page(req);
   const q = String(req.query.q ?? '').trim();
   const like = `%${q}%`;
-  const where = q ? "AND (p.hn = ? OR p.phone_number LIKE ? OR CONCAT(p.first_name, ' ', p.last_name) LIKE ?)" : '';
-  const params = q ? [q.toUpperCase(), like, like] : [];
+  const where = q ? "AND (p.hn = ? OR p.phone_number LIKE ? OR CONCAT(p.first_name, ' ', p.last_name) LIKE ? OR p.national_id_hash = ?)" : '';
+  const params = q ? [q.toUpperCase(), like, like, nidSearchHash(q)] : [];
   const rows = await query(
     `SELECT p.*,
             (SELECT COUNT(*) FROM appointments a WHERE a.patient_id = p.patient_id) AS total_bookings,
@@ -421,13 +530,16 @@ adminRouter.get('/patients', ah(async (req, res) => {
     [...params, limit, offset],
   );
   const total = await queryOne(`SELECT COUNT(*) AS n FROM patients p WHERE p.is_deleted = FALSE ${where}`, params);
-  res.json({ patients: rows, total: Number(total.n) });
+  res.json({ patients: rows.map(safePatient), total: Number(total.n) });
 }));
 
 adminRouter.get('/patients/:id', ah(async (req, res) => {
   const id = idParam.parse(req.params.id);
-  const patient = await queryOne('SELECT * FROM patients WHERE patient_id = ?', [id]);
-  if (!patient) throw notFound();
+  const row = await queryOne('SELECT * FROM patients WHERE patient_id = ?', [id]);
+  if (!row) throw notFound();
+  // หน้ารายละเอียด/แก้ไขของแอดมินเห็นเลขบัตรเต็ม → บันทึกทุกครั้งที่เปิดดู (PDPA)
+  const patient = { ...safePatient(row), national_id: revealThaiId(row.national_id_enc) };
+  if (patient.national_id) await audit(req, 'VIEW_NATIONAL_ID', 'patients', id);
   const [appointments, bookers, suspensions] = await Promise.all([
     query('SELECT * FROM v_appointment_details WHERE patient_id = ? ORDER BY slot_date DESC, start_time DESC LIMIT 100', [id]),
     query(`SELECT bp.relation, lu.line_user_id, lu.display_name FROM booker_patients bp
@@ -437,26 +549,51 @@ adminRouter.get('/patients/:id', ah(async (req, res) => {
   res.json({ patient, appointments, bookers, suspensions });
 }));
 
+/** ไม่ส่งค่าที่เข้ารหัส/hash ออกไป — ส่งแค่ว่ามีไหม + แบบปิดบัง */
+function safePatient({ national_id_enc: _e, national_id_hash: hash, national_id_last4: l4, ...p }) {
+  return { ...p, has_national_id: !!hash, no_national_id: !!p.no_national_id, national_id_masked: maskThaiId(l4) };
+}
+
 const adminPatientBody = patientInput.extend({ note: z.string().trim().max(255).optional().nullable() });
+
+/** เลขบัตร: กรอก = ตั้ง/เปลี่ยน, ติ๊ก "ไม่มีบัตรไทย" = ลบเลขเดิม, ว่าง = ไม่แตะ */
+async function saveAdminIdentity(conn, id, b) {
+  if (b.no_national_id && !b.national_id) {
+    await setNationalId(conn, id, null);
+    await conn.query('UPDATE patients SET no_national_id = TRUE WHERE patient_id = ?', [id]);
+  } else if (b.national_id) {
+    await setNationalId(conn, id, b.national_id);
+  }
+}
 
 adminRouter.post('/patients', ah(async (req, res) => {
   const b = adminPatientBody.parse(req.body);
-  const r = await query(
-    'INSERT INTO patients (patient_type, hn, first_name, last_name, phone_number, note) VALUES (?, ?, ?, ?, ?, ?)',
-    [b.hn ? 'HN' : 'GENERAL', b.hn, b.first_name, b.last_name, b.phone_number, b.note ?? null],
-  );
-  await audit(req, 'CREATE', 'patients', r.insertId);
-  res.status(201).json({ patient_id: r.insertId });
+  if (!b.national_id && !b.no_national_id) {
+    throw badRequest('NID_REQUIRED', 'กรุณากรอกเลขบัตรประชาชน หรือเลือก "ไม่มีบัตรประชาชนไทย"', { fields: { national_id: ['กรุณากรอกเลขบัตรประชาชน'] } });
+  }
+  const patientId = await withTx(async (conn) => {
+    const [r] = await conn.query(
+      'INSERT INTO patients (patient_type, hn, first_name, last_name, phone_number, note) VALUES (?, ?, ?, ?, ?, ?)',
+      [b.hn ? 'HN' : 'GENERAL', b.hn, b.first_name, b.last_name, b.phone_number, b.note ?? null],
+    );
+    await saveAdminIdentity(conn, r.insertId, b);
+    return r.insertId;
+  });
+  await audit(req, 'CREATE', 'patients', patientId);
+  res.status(201).json({ patient_id: patientId });
 }));
 
 adminRouter.put('/patients/:id', ah(async (req, res) => {
   const id = idParam.parse(req.params.id);
   const b = adminPatientBody.parse(req.body);
-  await query(
-    'UPDATE patients SET patient_type = ?, hn = ?, first_name = ?, last_name = ?, phone_number = ?, note = ? WHERE patient_id = ?',
-    [b.hn ? 'HN' : 'GENERAL', b.hn, b.first_name, b.last_name, b.phone_number, b.note ?? null, id],
-  );
-  await audit(req, 'UPDATE', 'patients', id);
+  await withTx(async (conn) => {
+    await conn.query(
+      'UPDATE patients SET patient_type = ?, hn = ?, first_name = ?, last_name = ?, phone_number = ?, note = ? WHERE patient_id = ?',
+      [b.hn ? 'HN' : 'GENERAL', b.hn, b.first_name, b.last_name, b.phone_number, b.note ?? null, id],
+    );
+    await saveAdminIdentity(conn, id, b);
+  });
+  await audit(req, 'UPDATE', 'patients', id, { national_id_changed: !!b.national_id });
   res.json({ ok: true });
 }));
 
@@ -514,10 +651,11 @@ adminRouter.get('/appointments', ah(async (req, res) => {
   if (req.query.from) { conds.push('slot_date >= ?'); params.push(dateStr.parse(req.query.from)); }
   if (req.query.to) { conds.push('slot_date <= ?'); params.push(dateStr.parse(req.query.to)); }
   if (req.query.status) { conds.push('status = ?'); params.push(String(req.query.status)); }
+  if (req.query.practitioner_id) { conds.push('practitioner_id = ?'); params.push(idParam.parse(req.query.practitioner_id)); }
   if (req.query.q) {
     const q = String(req.query.q).trim();
-    conds.push("(booking_code = ? OR hn = ? OR phone_number LIKE ? OR CONCAT(first_name, ' ', last_name) LIKE ?)");
-    params.push(q.toUpperCase(), q.toUpperCase(), `%${q}%`, `%${q}%`);
+    conds.push("(booking_code = ? OR hn = ? OR vn = ? OR phone_number LIKE ? OR CONCAT(first_name, ' ', last_name) LIKE ? OR patient_id IN (SELECT patient_id FROM patients WHERE national_id_hash = ?))");
+    params.push(q.toUpperCase(), q.toUpperCase(), q.toUpperCase(), `%${q}%`, `%${q}%`, nidSearchHash(q));
   }
   const where = conds.length ? `WHERE ${conds.join(' AND ')}` : '';
   const rows = await query(`SELECT * FROM v_appointment_details ${where} ORDER BY slot_date DESC, start_time LIMIT ? OFFSET ?`, [...params, limit, offset]);
@@ -533,21 +671,33 @@ adminRouter.patch('/appointments/:id', ah(async (req, res) => {
     status: z.enum(STATUSES).optional(),
     chief_complaint: z.string().trim().max(1000).optional().nullable(),
     cancel_reason: z.string().trim().max(255).optional().nullable(),
+    vn: vnInput,
+    practitioner_id: z.coerce.number().int().positive().optional().nullable(),
+    service_type_id: z.coerce.number().int().positive().optional(),
   }).parse(req.body);
   const sets = [];
   const params = [];
+  if (b.vn !== undefined) { sets.push('vn = ?'); params.push(b.vn); }
+  if (b.practitioner_id !== undefined) { sets.push('practitioner_id = ?'); params.push(b.practitioner_id); }
   if (b.status) {
     sets.push('status = ?'); params.push(b.status);
     if (b.status === 'CANCELLED') { sets.push("cancelled_at = COALESCE(cancelled_at, NOW()), cancelled_by = 'STAFF', cancel_reason = ?"); params.push(b.cancel_reason ?? 'แอดมินแก้สถานะ'); }
   }
   if (b.chief_complaint !== undefined) { sets.push('chief_complaint = ?'); params.push(b.chief_complaint); }
-  if (!sets.length) throw badRequest('NOTHING', 'ไม่มีข้อมูลที่จะแก้');
-  try {
-    await query(`UPDATE appointments SET ${sets.join(', ')} WHERE appointment_id = ?`, [...params, id]);
-  } catch (err) {
-    if (err.code === 'ER_DUP_ENTRY') throw conflict('SLOT_TAKEN', 'เปลี่ยนสถานะไม่ได้ เพราะรอบนี้มีคิวอื่นจองแทนแล้ว');
-    throw err;
-  }
+  if (!sets.length && !b.service_type_id) throw badRequest('NOTHING', 'ไม่มีข้อมูลที่จะแก้');
+  await withTx(async (conn) => {
+    const [[cur]] = await conn.query('SELECT slot_id, status FROM appointments WHERE appointment_id = ?', [id]);
+    if (!cur) throw notFound();
+    // คิวที่ยกเลิก/ไม่มา กลับมา active → ต้องมีที่ว่างในรอบนั้น (ล็อกแถว slot ก่อนนับ)
+    const reviving = b.status && !['CANCELLED', 'NO_SHOW'].includes(b.status) && ['CANCELLED', 'NO_SHOW'].includes(cur.status);
+    if (reviving) {
+      const [[slot]] = await conn.query('SELECT capacity FROM time_slots WHERE slot_id = ? FOR UPDATE', [cur.slot_id]);
+      const [[{ n }]] = await conn.query('SELECT COUNT(*) AS n FROM appointments WHERE active_slot_id = ?', [cur.slot_id]);
+      if (Number(n) >= slot.capacity) throw conflict('SLOT_TAKEN', 'เปลี่ยนสถานะไม่ได้ เพราะรอบนี้เต็มแล้ว');
+    }
+    if (sets.length) await conn.query(`UPDATE appointments SET ${sets.join(', ')} WHERE appointment_id = ?`, [...params, id]);
+    if (b.service_type_id) await updateVisitInfo(conn, id, { service_type_id: b.service_type_id });
+  });
   await audit(req, 'UPDATE', 'appointments', id, b);
   res.json({ ok: true });
 }));
@@ -631,4 +781,42 @@ adminRouter.get('/notification-logs', ah(async (req, res) => {
 adminRouter.get('/audit-logs', ah(async (req, res) => {
   const { limit, offset } = page(req);
   res.json({ logs: await query('SELECT * FROM audit_logs ORDER BY audit_id DESC LIMIT ? OFFSET ?', [limit, offset]) });
+}));
+
+// =====================================================================
+// รายงาน (ส่งออก Excel)
+// =====================================================================
+/**
+ * GET /api/admin/reports/bookings.xlsx?from=YYYY-MM-DD&to=YYYY-MM-DD&mask_phone=1&practitioner_id=2
+ * ดาวน์โหลดไฟล์ Excel รายงานการจอง (สรุป / รายวัน / รายการจอง / ผู้รับบริการ) — ดู services/report.js
+ *  - ช่วงวันที่ไม่เกิน 366 วัน
+ *  - mask_phone=1 → ปิดบังเบอร์โทร (081-xxx-5678) และเลขบัตรประชาชน
+ *  - practitioner_id → เฉพาะคิวที่หมอนวดคนนั้นนวด
+ *  - ไฟล์มีข้อมูลส่วนบุคคล → บันทึก audit log ทุกครั้งที่ดาวน์โหลด (PDPA)
+ */
+adminRouter.get('/reports/bookings.xlsx', ah(async (req, res) => {
+  const q = z.object({
+    from: dateStr,
+    to: dateStr,
+    mask_phone: z.enum(['0', '1']).optional(),
+    practitioner_id: z.coerce.number().int().positive().optional(),
+  }).parse(req.query);
+  if (q.from > q.to) throw badRequest('BAD_RANGE', 'วันที่เริ่มต้องไม่เกินวันที่สิ้นสุด');
+  const days = (Date.parse(q.to) - Date.parse(q.from)) / 86_400_000;
+  if (days > 366) throw badRequest('RANGE_TOO_LONG', 'เลือกช่วงวันที่ได้ไม่เกิน 1 ปี');
+
+  const { workbook, filename, count } = await buildBookingReport({
+    from: q.from, to: q.to, maskPhone: q.mask_phone === '1', practitionerId: q.practitioner_id ?? null, generatedBy: req.staff.full_name,
+  });
+  await audit(req, 'EXPORT_REPORT', 'appointments', null, {
+    from: q.from, to: q.to, rows: count, mask_phone: q.mask_phone === '1', practitioner_id: q.practitioner_id ?? null,
+  });
+
+  res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+  // ชื่อไฟล์ภาษาไทย: ใช้ filename* (RFC 5987) + ชื่อสำรองภาษาอังกฤษ
+  res.setHeader('Content-Disposition',
+    `attachment; filename="booking-report_${q.from}_${q.to}.xlsx"; filename*=UTF-8''${encodeURIComponent(filename)}`);
+  res.setHeader('Cache-Control', 'no-store');
+  await workbook.xlsx.write(res);
+  res.end();
 }));

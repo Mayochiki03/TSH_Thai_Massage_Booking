@@ -42,6 +42,11 @@ export function PeoplePage() {
             <div className="min-w-0 flex-1">
               <div className="truncate font-medium">{p.first_name} {p.last_name}</div>
               <div className="text-[14px] text-muted">{p.is_self ? 'ตัวเอง' : p.relation} / {p.phone_number}{p.hn ? ` / HN ${p.hn}` : ''}</div>
+              <div className="text-[13px] tabular-nums">
+                {p.has_national_id ? <span className="text-faint">บัตร {p.national_id_masked}</span>
+                  : p.no_national_id ? <span className="text-faint">ไม่มีบัตรประชาชนไทย</span>
+                    : <span className="text-clay">ยังไม่ได้กรอกเลขบัตรประชาชน</span>}
+              </div>
             </div>
             <button type="button" onClick={() => setEditing(p)} className="grid size-10 place-items-center rounded-full text-muted hover:bg-mist" aria-label={`แก้ไข ${p.first_name}`}>
               <Pencil className="size-[18px]" />
@@ -73,11 +78,14 @@ export function PersonSheet({ open, person, onClose, onSaved }) {
   useEffect(() => {
     if (!open) return;
     setErrors({});
-    setForm(person ? { ...emptyPerson, ...person, hn: person.hn ?? '', relation: isSelf ? undefined : person.relation } : { ...emptyPerson });
+    // เลขบัตรเดิมไม่ถูกส่งมาที่มือถือ (เห็นแค่แบบปิดบัง) → ช่องว่างไว้ เว้นว่าง = ใช้เลขเดิม
+    setForm(person
+      ? { ...emptyPerson, ...person, hn: person.hn ?? '', national_id: '', no_national_id: !!person.no_national_id, relation: isSelf ? undefined : person.relation }
+      : { ...emptyPerson });
   }, [open, person, isSelf]);
 
   const save = async () => {
-    const v = validatePerson(form, !isSelf);
+    const v = validatePerson(form, !isSelf, { hasSavedId: !!person?.has_national_id });
     setErrors(v);
     if (Object.keys(v).length) return;
     setLoading(true);
@@ -107,7 +115,14 @@ export function PersonSheet({ open, person, onClose, onSaved }) {
       title={person ? 'แก้ไขข้อมูล' : 'จองให้คนอื่น'}
       footer={<Button size="lg" className="w-full" loading={loading} onClick={save}>{person ? 'บันทึก' : 'เพิ่มรายชื่อ'}</Button>}
     >
-      <PersonForm key={`${open}-${person?.patient_id ?? 'new'}`} value={form} onChange={setForm} errors={errors} withRelation={!isSelf} />
+      <PersonForm
+        key={`${open}-${person?.patient_id ?? 'new'}`}
+        value={form}
+        onChange={setForm}
+        errors={errors}
+        withRelation={!isSelf}
+        savedMasked={person?.national_id_masked ?? undefined}
+      />
     </Sheet>
   );
 }

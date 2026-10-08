@@ -21,7 +21,7 @@ const TYPE_INFO = {
 };
 /** ค่าตัวอย่างสำหรับดูตัวอย่างข้อความ */
 const SAMPLE = {
-  patient_name: 'สมศรี ใจดี', date: 'พฤ. 8 ต.ค. 2569', time: '10:15–11:15 น.', code: 'K7M4QX',
+  patient_name: 'สมศรี ใจดี', date: 'พฤ. 8 ต.ค. 2569', time: '10:15–11:15 น.', code: 'K7M4QX', service: 'นวดแผนไทย', price: '200 บาท',
   reason: 'หมอนวดติดอบรม', end_date: 'ศ. 6 พ.ย. 2569', rebook_url: 'https://liff.line.me/…',
 };
 const fill = (t) => String(t).replace(/\{(\w+)\}/g, (m, k) => SAMPLE[k] ?? m);
@@ -63,7 +63,7 @@ function TemplateCard({ t, onSaved }) {
       <Switch checked={form.is_enabled} onChange={(v) => setForm({ ...form, is_enabled: v })} label={t.title} description={TYPE_INFO[t.type]} />
       <div className="mt-4 space-y-3">
         <Field label="หัวข้อ"><Input value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} maxLength={100} /></Field>
-        <Field label="ข้อความ" hint="ตัวแปร: {patient_name} {date} {time} {code} {reason} {end_date} {rebook_url}">
+        <Field label="ข้อความ" hint="ตัวแปร: {patient_name} {service} {price} {date} {time} {code} {reason} {end_date} {rebook_url}">
           <Textarea value={form.body} onChange={(e) => setForm({ ...form, body: e.target.value })} rows={5} maxLength={2000} />
         </Field>
         <div className="rounded-xl bg-sand px-4 py-3">

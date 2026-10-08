@@ -7,6 +7,7 @@
  * API ของเจ้าหน้าที่/แอดมินจึงไม่มีอยู่บนพอร์ตที่ออกอินเทอร์เน็ตเลย
  * แล้วเริ่มงานตั้งเวลา (cron) ถ้า ENABLE_CRON=true
  */
+import os from 'node:os';
 import express from 'express';
 import helmet from 'helmet';
 import cookieParser from 'cookie-parser';
@@ -72,7 +73,7 @@ internalApp.use('/api/admin', requireStaff, requirePasswordChanged, adminRouter)
 internalApp.use('/api/dev', requireStaff, requirePasswordChanged, devRouter);
 internalApp.use('/api/kiosk', requireStaff, requirePasswordChanged, kioskRouter);
 // API ผู้จองบนพอร์ตนี้ด้วย → เปิดหน้าผู้จองใน LAN เพื่อทดสอบผู้ใช้จำลองได้ (origin เดียวกับหน้าแอดมิน)
-internalApp.use('/api/public', publicApiLimiter, publicRouter);
+internalApp.use('/api/public', (req, _res, next) => { req.viaInternal = true; next(); }, publicApiLimiter, publicRouter);
 internalApp.use('/api', apiNotFound);
 mountFullWeb(internalApp); // ทุกหน้า
 internalApp.use(errorHandler);
@@ -80,14 +81,29 @@ internalApp.use(errorHandler);
 // =====================================================================
 async function main() {
   await pool.query('SELECT 1'); // เช็กว่าต่อ DB ได้ก่อนเปิดพอร์ต
-  publicApp.listen(config.publicPort, config.publicHost, () => {
-    console.log(`[public]   http://${config.publicHost}:${config.publicPort}  (หน้าจอง — ออกเน็ตผ่าน tunnel)`);
-  });
-  internalApp.listen(config.internalPort, config.internalHost, () => {
-    console.log(`[internal] http://${config.internalHost}:${config.internalPort}  (แอดมิน/เจ้าหน้าที่ — LAN เท่านั้น)`);
-  });
-  if (publicWeb) console.log(`[web]      ส่งหน้าเว็บจาก ${config.frontendDist}`);
-  else console.log('[web]      ยังไม่มี frontend/dist (ยังไม่ได้ build) — ใช้ Vite :5173 ระหว่างพัฒนา');
+  // ตัวเลข 0.0.0.0 / :: แปลว่า "รับทุกช่องทาง" เปิดใน browser ไม่ได้ → แสดง localhost + IP ในวง LAN แทน
+  const shown = (host) => (host === '0.0.0.0' || host === '::' ? 'localhost' : host);
+  const lanIps = Object.values(os.networkInterfaces()).flat()
+    .filter((n) => n && n.family === 'IPv4' && !n.internal).map((n) => n.address);
+  await Promise.all([
+    new Promise((ok) => publicApp.listen(config.publicPort, config.publicHost, ok)),
+    new Promise((ok) => internalApp.listen(config.internalPort, config.internalHost, ok)),
+  ]);
+  const pub = `http://${shown(config.publicHost)}:${config.publicPort}`;
+  const int = `http://${shown(config.internalHost)}:${config.internalPort}`;
+  console.log('');
+  console.log('  หน้าผู้จอง (พอร์ตนี้ต่อ Cloudflare Tunnel)');
+  console.log(`    ${pub}`);
+  console.log('  หน้าเจ้าหน้าที่ (LAN เท่านั้น)');
+  console.log(`    ผู้ดูแล/นักพัฒนา  ${int}/admin`);
+  console.log(`    เคาน์เตอร์/หมอนวด ${int}/staff`);
+  console.log(`    kiosk            ${int}/kiosk`);
+  if (config.internalHost === '0.0.0.0' && lanIps.length) {
+    console.log(`    เครื่องอื่นใน LAN  ${lanIps.map((ip) => `http://${ip}:${config.internalPort}`).join('  ')}`);
+  }
+  console.log('');
+  if (publicWeb) console.log(`[web]  ส่งหน้าเว็บจาก ${config.frontendDist}`);
+  else console.log('[web]  ยังไม่มี frontend/dist (ยังไม่ได้ build: npm run build:web) — ระหว่างพัฒนาใช้ Vite http://localhost:5173');
   if (config.enableCron) startCron();
 }
 

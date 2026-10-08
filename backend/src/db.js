@@ -10,7 +10,8 @@ export const pool = mysql.createPool({
   ...config.db,
   waitForConnections: true,
   connectionLimit: 10,
-  charset: 'utf8mb4',
+  // ต้องตรงกับ collation ของฐานข้อมูล (00_create_database.sql) — ไม่งั้นเทียบข้อความกับ view จะ error "Illegal mix of collations"
+  charset: 'UTF8MB4_0900_AI_CI',
   timezone: '+07:00',
   dateStrings: true, // DATE/TIME/TIMESTAMP คืนเป็น string ตามเวลาไทย (ไม่แปลงเป็น JS Date)
 });
@@ -31,17 +32,25 @@ export async function queryOne(sql, params = []) {
 }
 
 /** รันฟังก์ชันใน transaction — commit อัตโนมัติ, rollback เมื่อ throw */
-export async function withTx(fn) {
-  const conn = await pool.getConnection();
-  try {
-    await conn.beginTransaction();
-    const result = await fn(conn);
-    await conn.commit();
-    return result;
-  } catch (err) {
-    await conn.rollback();
-    throw err;
-  } finally {
-    conn.release();
+export async function withTx(fn, { retries = 3 } = {}) {
+  for (let attempt = 1; ; attempt++) {
+    const conn = await pool.getConnection();
+    try {
+      await conn.beginTransaction();
+      const result = await fn(conn);
+      await conn.commit();
+      return result;
+    } catch (err) {
+      await conn.rollback().catch(() => {});
+      // deadlock: MySQL ยกเลิก transaction หนึ่งเมื่อมีหลาย request ล็อกชนกัน (เช่น ลงทะเบียนคนใหม่พร้อมกัน)
+      // → ทำทั้ง transaction ใหม่ (ทุกอย่างใน fn อยู่ใน DB จึงทำซ้ำได้ปลอดภัย)
+      if (err?.code === 'ER_LOCK_DEADLOCK' && attempt < retries) {
+        await new Promise((r) => setTimeout(r, 20 + Math.random() * 60 * attempt));
+        continue;
+      }
+      throw err;
+    } finally {
+      conn.release();
+    }
   }
 }

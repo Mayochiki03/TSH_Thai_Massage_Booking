@@ -20,6 +20,13 @@ INSERT INTO staff_users (username, password_hash, full_name, role, must_change_p
   ('dev',   '$2b$10$xMyz7DWrIDeu5usbw56VTexzNxP3gTpImGD6nsmOLjKYHMkA7KbKG', 'นักพัฒนาระบบ', 'DEV',   TRUE);
 
 -- ---------------------------------------------------------------------
+-- ประเภทบริการ — ⚠ ราคาเป็นค่าตัวอย่าง แก้ให้ตรงประกาศของโรงพยาบาลที่เมนู "ประเภทบริการและราคา"
+-- ---------------------------------------------------------------------
+INSERT INTO service_types (name, description, price, sort_order) VALUES
+  ('นวดแผนไทย',              'นวดไทยแบบทั่วไป',                    200.00, 1),
+  ('นวดแผนไทย + ประคบสมุนไพร', 'นวดไทยร่วมกับลูกประคบสมุนไพรร้อน', 300.00, 2);
+
+-- ---------------------------------------------------------------------
 -- แม่แบบรอบเวลา (ค่าตั้งต้นจากเอกสาร — แก้ได้ในหน้าแอดมิน)
 -- ---------------------------------------------------------------------
 INSERT INTO slot_templates (start_time, end_time, sort_order) VALUES
@@ -47,6 +54,7 @@ INSERT INTO holidays (holiday_date, name) VALUES
 -- ---------------------------------------------------------------------
 INSERT INTO settings (setting_key, setting_value, label, category, value_type, sort_order) VALUES
   -- กฎการจอง
+  ('bed_count',            '1',         'จำนวนเตียงนวด (รับได้กี่คนต่อรอบ)',                   'BOOKING', 'INT',    0),
   ('max_per_day',          '1',         'จองได้สูงสุดต่อผู้รับบริการต่อวัน (คิว)',              'BOOKING', 'INT',    1),
   ('max_per_week',         '2',         'จองได้สูงสุดต่อผู้รับบริการต่อสัปดาห์ จ.–อา. (คิว)',    'BOOKING', 'INT',    2),
   ('advance_booking_days', '2',         'จองล่วงหน้าได้สูงสุด (วัน)',                         'BOOKING', 'INT',    3),
@@ -80,7 +88,7 @@ INSERT INTO settings (setting_key, setting_value, label, category, value_type, s
 -- ---------------------------------------------------------------------
 INSERT INTO notification_templates (type, title, body, is_enabled) VALUES
   ('BOOKED', 'จองคิวสำเร็จ',
-   'จองคิวนวดแผนไทยสำเร็จ\nผู้รับบริการ: {patient_name}\nวันที่: {date}\nเวลา: {time}\nรหัสจอง: {code}\n\nกรุณามาเช็กอินที่เคาน์เตอร์ก่อนเวลานัด 10–15 นาที', TRUE),
+   'จองคิวนวดแผนไทยสำเร็จ\nผู้รับบริการ: {patient_name}\nบริการ: {service} ({price})\nวันที่: {date}\nเวลา: {time}\nรหัสจอง: {code}\n\nกรุณามาเช็กอินที่เคาน์เตอร์ก่อนเวลานัด 10–15 นาที', TRUE),
   ('REMIND_1D', 'เตือนนัดพรุ่งนี้',
    'พรุ่งนี้คุณ {patient_name} มีนัดนวดแผนไทย\nวันที่: {date} เวลา: {time}\nรหัสจอง: {code}', FALSE),
   ('REMIND_2H', 'อีก 2 ชั่วโมงถึงเวลานัด',
