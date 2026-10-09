@@ -9,6 +9,21 @@
 
 ---
 
+## [0.7.3] - 2026-10-09
+
+แก้ตามผลสแกน SonarQube ครั้งแรก (Bug 1, Security Hotspots 5) — ไม่มีการเปลี่ยนพฤติกรรมที่ผู้ใช้เห็น ไม่ต้องรัน migration
+
+### เพิ่ม
+- `sonar-project.properties` — ตั้งค่าสแกน SonarQube (สแกน `backend/src`, `frontend/src`; token ส่งตอนรันเท่านั้น)
+
+### แก้ไข
+- `.sort()` ที่ไม่มีฟังก์ชันเปรียบเทียบ (วันเปิดทำการในหน้ากฎการจอง, รายการช่วงเวลาในรายงาน) → ระบุวิธีเรียงชัดเจน
+- `Math.random()` → `node:crypto` (hash หลอกตอนล็อกอิน, เวลารอ retry deadlock) และตัวนับธรรมดา (id ของ toast)
+- regex ที่อาจ backtracking นาน: ตัด `/` ท้าย Public URL ด้วยลูปแทน regex, ตัด "()" ว่างในข้อความแจ้งเตือนด้วย pattern ที่ไม่ซ้อน quantifier
+- ลบ import ที่ไม่ได้ใช้ (`nationalIdInput`, `useMemo`)
+
+---
+
 ## [0.7.2] - 2026-10-09
 
 ### เพิ่ม

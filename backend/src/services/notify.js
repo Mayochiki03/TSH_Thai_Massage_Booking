@@ -75,7 +75,7 @@ async function deliver(lineUserId, message, { appointmentId, type }) {
 /** สร้าง Flex message: ข้อความจาก template + ปุ่มตามชนิด */
 async function buildMessage(type, tpl, vars, code) {
   // ตัดวงเล็บที่ว่างหลังแทนค่า เช่น "นวดแผนไทย ()" เมื่อไม่แสดงราคา
-  const text = fillTemplate(tpl.body, vars).replace(/[ \t]*\(\s*\)/g, '');
+  const text = fillTemplate(tpl.body, vars).replace(/[ \t]?\(\s*\)/g, '');
   const buttons = [];
   if (type === 'REMIND_2H' && code) {
     buttons.push(button('ยืนยันมาตามนัด', await patientUrl(`/ticket/${code}?action=confirm`), 'primary'));

@@ -18,7 +18,7 @@ import { notifyAppointment } from '../services/notify.js';
 import { generateSlots } from '../jobs/cron.js';
 import { audit } from '../services/audit.js';
 import { buildBookingReport } from '../services/report.js';
-import { patientInput, idParam, dateStr, timeStr, vnInput, nationalIdInput } from './schemas.js';
+import { patientInput, idParam, dateStr, timeStr, vnInput } from './schemas.js';
 import { setNationalId } from '../services/patients.js';
 import { revealThaiId, maskThaiId } from '../utils/nationalId.js';
 import { nidSearchHash } from './staff.js';

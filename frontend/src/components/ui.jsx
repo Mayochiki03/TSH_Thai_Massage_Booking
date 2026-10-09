@@ -168,10 +168,11 @@ export const useConfirm = () => useContext(ConfirmCtx);
 // Toast
 // ---------------------------------------------------------------------
 const ToastCtx = createContext(null);
+let toastSeq = 0;
 export function ToastProvider({ children }) {
   const [items, setItems] = useState([]);
   const push = useCallback((message, type = 'success') => {
-    const id = Math.random();
+    const id = ++toastSeq;
     setItems((s) => [...s, { id, message, type }]);
     setTimeout(() => setItems((s) => s.filter((t) => t.id !== id)), type === 'error' ? 5000 : 3000);
   }, []);

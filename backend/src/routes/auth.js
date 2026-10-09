@@ -10,6 +10,7 @@
  *   ระหว่างนี้ถือ cookie tmb_mfa (10 นาที) ยังเรียก API อื่นไม่ได้
  *   บัญชีที่ไม่ต้องใช้ 2FA (และยังไม่ได้ผูก) → ได้ session ทันทีเหมือนเดิม
  */
+import crypto from 'node:crypto';
 import { Router } from 'express';
 import bcrypt from 'bcryptjs';
 import rateLimit from 'express-rate-limit';
@@ -25,7 +26,7 @@ import { mfaRequired, mfaEnabled, startSetup, confirmSetup, verifyLogin } from '
 export const authRouter = Router();
 
 // hash หลอกสำหรับกรณีไม่พบ username (ให้ใช้เวลาเท่ากับกรณีพบ)
-const DUMMY_HASH = bcrypt.hashSync(`dummy-${Math.random()}`, 10);
+const DUMMY_HASH = bcrypt.hashSync(crypto.randomBytes(16).toString('hex'), 10);
 
 // กันเดารหัสผ่าน: ล็อกอินผิดได้ 10 ครั้ง / 15 นาที / IP (ล็อกอินสำเร็จไม่นับ)
 const loginLimiter = rateLimit({

@@ -604,7 +604,7 @@ export async function buildBookingReport({ from, to, maskPhone: mask = false, pr
 
   const uniq = (arr) => [...new Set(arr)];
   const lists = {
-    slots: uniq(bookings.map((b) => `${hhmm(b.start_time)}–${hhmm(b.end_time)}`)).sort(),
+    slots: uniq(bookings.map((b) => `${hhmm(b.start_time)}–${hhmm(b.end_time)}`)).sort((a, b) => a.localeCompare(b)),
     services: uniq(bookings.map((b) => b.service_name || '-')),
     // คิวที่นวดเสร็จแต่ไม่มีชื่อหมอนวด → แถว "(ไม่ระบุ)"
     practitioners: uniq(bookings.filter((b) => b.status === 'COMPLETED' || b.practitioner_name).map((b) => b.practitioner_name || '')),

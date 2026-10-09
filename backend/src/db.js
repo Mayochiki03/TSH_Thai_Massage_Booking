@@ -3,6 +3,7 @@
  *  - ทุก connection ตั้ง time_zone = +07:00 → NOW()/CURDATE() เป็นเวลาไทยเสมอ
  *  - dateStrings: วันที่/เวลาคืนเป็น string ('2026-10-07', '09:00:00') ไม่แปลงเป็น JS Date (กันเวลาเพี้ยน)
  */
+import crypto from 'node:crypto';
 import mysql from 'mysql2/promise';
 import { config } from './config.js';
 
@@ -45,7 +46,7 @@ export async function withTx(fn, { retries = 3 } = {}) {
       // deadlock: MySQL ยกเลิก transaction หนึ่งเมื่อมีหลาย request ล็อกชนกัน (เช่น ลงทะเบียนคนใหม่พร้อมกัน)
       // → ทำทั้ง transaction ใหม่ (ทุกอย่างใน fn อยู่ใน DB จึงทำซ้ำได้ปลอดภัย)
       if (err?.code === 'ER_LOCK_DEADLOCK' && attempt < retries) {
-        await new Promise((r) => setTimeout(r, 20 + Math.random() * 60 * attempt));
+        await new Promise((r) => setTimeout(r, 20 + crypto.randomInt(60) * attempt));
         continue;
       }
       throw err;

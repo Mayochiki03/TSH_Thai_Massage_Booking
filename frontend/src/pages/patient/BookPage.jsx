@@ -10,7 +10,7 @@
  *  - มือถือ/แท็บเล็ตแนวตั้ง : คอลัมน์เดียว + แถบสรุปและปุ่มจองติดขอบล่าง
  *  - จอกว้าง (lg ≥ 1024px)   : 2 คอลัมน์ — ซ้ายเลือกข้อมูล / ขวากล่องสรุปการจองติดอยู่ขณะเลื่อน
  */
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router';
 import { Plus, UserRound, CalendarX2, Check, Sparkles } from 'lucide-react';
 import { patientApi } from '../../lib/liff.js';

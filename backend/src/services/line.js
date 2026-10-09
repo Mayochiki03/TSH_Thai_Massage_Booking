@@ -7,6 +7,13 @@
  */
 import { getSettings } from './settings.js';
 
+/** ตัด / ท้าย URL (ไม่ใช้ regex เพื่อเลี่ยง backtracking) */
+function stripTrailingSlashes(url) {
+  let end = url.length;
+  while (end > 0 && url[end - 1] === '/') end--;
+  return url.slice(0, end);
+}
+
 const API = 'https://api.line.me';
 
 export async function lineConfig() {
@@ -16,7 +23,7 @@ export async function lineConfig() {
   ]);
   return {
     mode: s.connection_mode || 'LOCAL',
-    publicBaseUrl: (s.public_base_url || '').replace(/\/+$/, ''),
+    publicBaseUrl: stripTrailingSlashes(s.public_base_url || ''),
     liffId: s.liff_id || '',
     loginChannelId: s.line_login_channel_id || '',
     channelSecret: s.line_channel_secret || '',

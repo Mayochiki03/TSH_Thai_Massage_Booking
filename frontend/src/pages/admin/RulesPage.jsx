@@ -91,7 +91,7 @@ function SettingInput({ s, value, onChange }) {
     const toggle = (d) => {
       const next = new Set(set);
       next.has(d) ? next.delete(d) : next.add(d);
-      onChange([...next].sort().join(','));
+      onChange([...next].sort((a, b) => a - b).join(','));
     };
     return (
       <div className="flex flex-wrap items-center justify-between gap-3">
