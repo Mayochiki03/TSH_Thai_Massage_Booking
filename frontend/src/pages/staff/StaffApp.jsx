@@ -22,7 +22,7 @@ export function StaffApp() {
 }
 
 function StaffLayout() {
-  const { user, logout } = useSession();
+  const { user, confirmLogout } = useSession();
   const { pathname } = useLocation();
 
   // /staff เฉย ๆ → ไปหน้าหลักของ role
@@ -67,7 +67,7 @@ function StaffLayout() {
             <div className="truncate text-[15px] font-medium">{user.full_name}</div>
             <div className="text-[13px] text-muted">{ROLE_LABEL[user.role]}</div>
           </div>
-          <button type="button" onClick={logout} className="grid size-10 shrink-0 place-items-center rounded-xl text-muted hover:bg-sand hover:text-ink" aria-label="ออกจากระบบ" title="ออกจากระบบ">
+          <button type="button" onClick={confirmLogout} className="grid size-10 shrink-0 place-items-center rounded-xl text-muted hover:bg-sand hover:text-ink" aria-label="ออกจากระบบ" title="ออกจากระบบ">
             <LogOut className="size-5" />
           </button>
         </div>

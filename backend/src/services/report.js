@@ -4,11 +4,12 @@
  * buildBookingReport({ from, to, maskPhone, practitionerId, generatedBy }) → { workbook, filename, count }
  *
  * ไฟล์มี 4 แผ่นงาน:
- *   1) สรุป          การ์ดตัวเลข (คิว / เสร็จสิ้น / ไม่มา / ยกเลิก / อัตรามาตามนัด / อัตราการใช้รอบ / รายได้ / เวลาเฉลี่ย / จำนวนคน)
+ *   1) สรุป          การ์ดตัวเลข (คิว / เสร็จสิ้น / ไม่มา / ยกเลิก / อัตรามาตามนัด / อัตราการใช้รอบ / รอรับบริการ / เวลาเฉลี่ย / จำนวนคน)
+ *                    ไม่มีการสรุปรายได้ (ตามที่หัวหน้ากำหนด) — ราคาแสดงเป็นรายคิวในแผ่น "รายการจอง" เท่านั้น
  *                    + ตารางแยกตามสถานะ / ช่องทาง / รอบเวลา / ประเภทบริการ / หมอนวด + คำอธิบาย
- *   2) รายวัน        ทีละวัน: จำนวนที่ (เตียง×รอบ) / ปิดรับ / จอง / เสร็จ / ไม่มา / ยกเลิก / อัตราการใช้รอบ / รายได้
+ *   2) รายวัน        ทีละวัน: จำนวนที่ (เตียง×รอบ) / ปิดรับ / จอง / เสร็จ / ไม่มา / ยกเลิก / อัตราการใช้รอบ
  *   3) รายการจอง     ทุกคิว: เลขบัตรประชาชน, ประเภทบริการ+ราคา, หมอนวด, VN ฯลฯ (กรอง/เรียงได้ สีตามสถานะ)
- *   4) ผู้รับบริการ   รายคน: เลขบัตร, จองกี่ครั้ง เสร็จ / ไม่มา / ยกเลิก / ยอดเงิน / มาครั้งล่าสุด
+ *   4) ผู้รับบริการ   รายคน: เลขบัตร, จองกี่ครั้ง เสร็จ / ไม่มา / ยกเลิก / มาครั้งล่าสุด
  *
  * practitionerId → เฉพาะคิวที่หมอนวดคนนั้นนวด ("หมอนวดคนนี้นวดใครไปบ้าง")
  * maskPhone      → ปิดบังเบอร์โทรและเลขบัตรประชาชน (ไฟล์ที่จะส่งต่อ)
@@ -310,7 +311,6 @@ function buildDailySheet(wb, days, rows, head, { filtered }) {
     { h: 'ไม่มาตามนัด', w: 11, align: 'center', fmt: FMT.int },
     { h: 'ยกเลิก', w: 8, align: 'center', fmt: FMT.int },
     { h: 'อัตราการใช้รอบ', w: 13, align: 'center', fmt: FMT.pct },
-    { h: 'รายได้\n(เสร็จสิ้น)', w: 12, align: 'right', fmt: FMT.baht },
     { h: 'หมายเหตุ', w: 22 },
   ];
   titleBlock(ws, cols.length, { ...head, title: 'สรุปรายวัน' });
@@ -320,7 +320,6 @@ function buildDailySheet(wb, days, rows, head, { filtered }) {
 
   const dR = listRange(rows, 'date');
   const sR = listRange(rows, 'status');
-  const pR = listRange(rows, 'price');
   days.forEach((d, i) => {
     const r = DAILY_HEADER_ROW + 1 + i;
     const values = [
@@ -334,7 +333,6 @@ function buildDailySheet(wb, days, rows, head, { filtered }) {
       { formula: `COUNTIFS(${dR},A${r},${sR},"${STATUS_TH.CANCELLED}")` },
       // อัตราการใช้รอบ = (จอง − ยกเลิก) ÷ (ที่ทั้งหมด − ปิดรับ) — เมื่อกรองหมอนวด ตัวเลขนี้ไม่มีความหมาย จึงเว้นไว้
       filtered ? '' : { formula: `IF(C${r}-D${r}>0,(E${r}-H${r})/(C${r}-D${r}),"")` },
-      { formula: `SUMIFS(${pR},${dR},A${r},${sR},"${DONE}")` },
       d.holiday ? `วันหยุด: ${d.holiday}` : '',
     ];
     const row = ws.getRow(r);
@@ -352,7 +350,7 @@ function buildDailySheet(wb, days, rows, head, { filtered }) {
   const total = ws.getRow(tr);
   total.getCell(1).value = 'รวม';
   total.getCell(2).value = days.length ? `${days.length} วัน` : '';
-  ['C', 'D', 'E', 'F', 'G', 'H', 'J'].forEach((c) => { ws.getCell(`${c}${tr}`).value = { formula: `SUM(${c}${first}:${c}${last})` }; });
+  ['C', 'D', 'E', 'F', 'G', 'H'].forEach((c) => { ws.getCell(`${c}${tr}`).value = { formula: `SUM(${c}${first}:${c}${last})` }; });
   ws.getCell(`I${tr}`).value = filtered ? '' : { formula: `IF(C${tr}-D${tr}>0,(E${tr}-H${tr})/(C${tr}-D${tr}),"")` };
   cols.forEach((c, i) => totalCell(total.getCell(i + 1), { align: c.align === 'right' ? 'right' : 'center', numFmt: c.fmt === FMT.date ? undefined : c.fmt }));
   total.height = 24;
@@ -379,7 +377,6 @@ function buildPeopleSheet(wb, bookings, rows, opts, head) {
     { h: 'เสร็จสิ้น', w: 9, align: 'center', fmt: FMT.int },
     { h: 'ไม่มาตามนัด', w: 11, align: 'center', fmt: FMT.int },
     { h: 'ยกเลิก', w: 8, align: 'center', fmt: FMT.int },
-    { h: 'ยอดเงิน\n(เสร็จสิ้น)', w: 12, align: 'right', fmt: FMT.baht },
     { h: 'มาครั้งล่าสุด', w: 14, align: 'center', fmt: FMT.dateZeroDash },
     { h: 'patient_id', w: 8, hidden: true },
   ];
@@ -405,7 +402,6 @@ function buildPeopleSheet(wb, bookings, rows, opts, head) {
   const idR = listRange(rows, 'pid');
   const sR = listRange(rows, 'status');
   const dR = listRange(rows, 'date');
-  const pR = listRange(rows, 'price');
   people.forEach((p, i) => {
     const r = PEOPLE_HEADER_ROW + 1 + i;
     const k = `${PID}${r}`;
@@ -420,7 +416,6 @@ function buildPeopleSheet(wb, bookings, rows, opts, head) {
       { formula: `COUNTIFS(${idR},${k},${sR},"${DONE}")` },
       { formula: `COUNTIFS(${idR},${k},${sR},"${STATUS_TH.NO_SHOW}")` },
       { formula: `COUNTIFS(${idR},${k},${sR},"${STATUS_TH.CANCELLED}")` },
-      { formula: `SUMIFS(${pR},${idR},${k},${sR},"${DONE}")` },
       { formula: `_xlfn.MAXIFS(${dR},${idR},${k},${sR},"${DONE}")` },
       Number(p.patient_id),
     ];
@@ -457,7 +452,6 @@ function buildSummarySheet(ws, rows, daily, people, lists, head, { filtered }) {
 
   const sR = listRange(rows, 'status');
   const codeR = listRange(rows, 'code');
-  const pR = listRange(rows, 'price');
   const cnt = (s) => `COUNTIF(${sR},"${STATUS_TH[s]}")`;
   const peopleRange = ref(SHEET.people, `$B$${people.first}:$B$${people.last}`);
 
@@ -499,18 +493,18 @@ function buildSummarySheet(ws, rows, daily, people, lists, head, { filtered }) {
   card(9, GROUPS[2], 'อัตราการใช้รอบ',
     filtered ? null : `IF(ISNUMBER(${ref(SHEET.daily, `I${daily.totalRow}`)}),${ref(SHEET.daily, `I${daily.totalRow}`)},0)`,
     filtered ? 'ไม่คำนวณเมื่อกรองหมอนวด' : 'คิวที่ไม่ยกเลิก ÷ ที่ที่เปิดรับ', { numFmt: FMT.pct });
-  // แถว 3: เงิน / เวลา / คน
-  card(13, GROUPS[0], 'รายได้ (เสร็จสิ้น)', `SUMIFS(${pR},${sR},"${DONE}")`, 'ตามราคา ณ วันที่จอง', gold);
+  // แถว 3: คิวค้าง / เวลา / คน
+  card(13, GROUPS[0], 'รอรับบริการ', `${cnt('BOOKED')}+${cnt('CHECKED_IN')}+${cnt('IN_SERVICE')}`, 'จองไว้ / มาถึงแล้ว / กำลังนวด', gold);
   card(13, GROUPS[1], 'เวลานวดเฉลี่ย', `IFERROR(ROUND(AVERAGE(${listRange(rows, 'minutes')}),0),0)`, 'เฉพาะคิวที่บันทึกเวลาครบ', { numFmt: FMT.min, ...gold });
   card(13, GROUPS[2], 'ผู้รับบริการ', `COUNTA(${peopleRange})-COUNTIF(${peopleRange},"ไม่มีข้อมูล")`, 'จำนวนคน (ไม่นับซ้ำ)', sky);
 
-  /** ตารางย่อย 3 คอลัมน์: รายการ / จำนวน / (สัดส่วน หรือ รายได้) */
+  /** ตารางย่อย 3 คอลัมน์: รายการ / จำนวน / สัดส่วน — third = 'done' นับเฉพาะคิวที่นวดเสร็จ */
   const miniTable = (top, col, title, items, { key, third = 'pct' }) => {
     ws.mergeCells(top, col, top, col + 2);
     Object.assign(ws.getCell(top, col), { value: title, font: { name: FONT, size: 11, bold: true, color: { argb: C.herbDark } } });
     ws.getRow(top).height = 22;
     const hr = top + 1;
-    ['รายการ', third === 'money' ? 'คิวเสร็จสิ้น' : 'จำนวน', third === 'money' ? 'รายได้' : 'สัดส่วน'].forEach((h, i) => {
+    ['รายการ', third === 'done' ? 'คิวเสร็จสิ้น' : 'จำนวน', 'สัดส่วน'].forEach((h, i) => {
       const cell = ws.getCell(hr, col + i);
       cell.value = h;
       cell.font = { name: FONT, size: 10, bold: true, color: { argb: C.white } };
@@ -525,25 +519,21 @@ function buildSummarySheet(ws, rows, daily, people, lists, head, { filtered }) {
       const r = hr + 1 + i;
       const [a, b, c] = [ws.getCell(r, col), ws.getCell(r, col + 1), ws.getCell(r, col + 2)];
       a.value = label;
-      if (third === 'money') {
-        b.value = { formula: `COUNTIFS(${range},"${match}",${sR},"${DONE}")` };
-        c.value = { formula: `SUMIFS(${pR},${range},"${match}",${sR},"${DONE}")` };
-      } else {
-        b.value = { formula: `COUNTIF(${range},"${match}")` };
-        c.value = { formula: `IFERROR(${L2}${r}/${L2}${tr},0)` };
-      }
+      b.value = third === 'done'
+        ? { formula: `COUNTIFS(${range},"${match}",${sR},"${DONE}")` }
+        : { formula: `COUNTIF(${range},"${match}")` };
+      c.value = { formula: `IFERROR(${L2}${r}/${L2}${tr},0)` };
       bodyCell(a, i);
       bodyCell(b, i, { align: 'center', numFmt: FMT.int });
-      bodyCell(c, i, { align: third === 'money' ? 'right' : 'center', numFmt: third === 'money' ? FMT.baht : FMT.pct });
+      bodyCell(c, i, { align: 'center', numFmt: FMT.pct });
       ws.getRow(r).height = 21;
     });
     ws.getCell(tr, col).value = 'รวม';
     ws.getCell(tr, col + 1).value = { formula: `SUM(${L2}${hr + 1}:${L2}${tr - 1})` };
-    const L3 = colLetter(col + 2);
-    ws.getCell(tr, col + 2).value = third === 'money' ? { formula: `SUM(${L3}${hr + 1}:${L3}${tr - 1})` } : { formula: `IF(${L2}${tr}>0,1,0)` };
+    ws.getCell(tr, col + 2).value = { formula: `IF(${L2}${tr}>0,1,0)` };
     totalCell(ws.getCell(tr, col), { align: 'left' });
     totalCell(ws.getCell(tr, col + 1), { align: 'center', numFmt: FMT.int });
-    totalCell(ws.getCell(tr, col + 2), { align: third === 'money' ? 'right' : 'center', numFmt: third === 'money' ? FMT.baht : FMT.pct });
+    totalCell(ws.getCell(tr, col + 2), { align: 'center', numFmt: FMT.pct });
     return tr;
   };
 
@@ -552,9 +542,9 @@ function buildSummarySheet(ws, rows, daily, people, lists, head, { filtered }) {
   const t2 = miniTable(top, GROUPS[1], 'แยกตามช่องทางการจอง', Object.values(CHANNEL_TH).map((th) => [th, th]), { key: 'channel' });
   const t3 = lists.slots.length ? miniTable(top, GROUPS[2], 'แยกตามรอบเวลา', lists.slots.map((t) => [t, t]), { key: 'slot' }) : top;
   top = Math.max(t1, t2, t3) + 2;
-  const t4 = miniTable(top, GROUPS[0], 'แยกตามประเภทบริการ', lists.services.map((n) => [n, n]), { key: 'service', third: 'money' });
+  const t4 = miniTable(top, GROUPS[0], 'แยกตามประเภทบริการ', lists.services.map((n) => [n, n]), { key: 'service', third: 'done' });
   // หมอนวด: ช่องว่าง = คิวที่ยังไม่มีคนรับ / คิวเก่าก่อนมีระบบบันทึกหมอนวด
-  const t5 = miniTable(top, GROUPS[1], 'แยกตามหมอนวด', lists.practitioners.map((n) => [n || '(ไม่ระบุ)', n || '']), { key: 'pract', third: 'money' });
+  const t5 = miniTable(top, GROUPS[1], 'แยกตามหมอนวด', lists.practitioners.map((n) => [n || '(ไม่ระบุ)', n || '']), { key: 'pract', third: 'done' });
 
   const nr = Math.max(t4, t5) + 2;
   ws.mergeCells(nr, 1, nr, 11);
@@ -563,7 +553,7 @@ function buildSummarySheet(ws, rows, daily, people, lists, head, { filtered }) {
     '• ตัวเลขทุกช่องในแผ่นนี้คำนวณด้วยสูตรจากแผ่น "รายการจอง" — ถ้าแก้ไขหรือกรองข้อมูลในแผ่นนั้น ตัวเลขจะเปลี่ยนตาม',
     '• อัตรามาตามนัด = เสร็จสิ้น ÷ (เสร็จสิ้น + ไม่มาตามนัด) ไม่นับคิวที่ยกเลิกล่วงหน้าและคิวที่ยังไม่ถึงเวลา',
     '• อัตราการใช้รอบ = คิวที่ไม่ได้ยกเลิก ÷ จำนวนที่ที่เปิดรับ (เตียง × รอบ ไม่นับที่ปิดรับ) ดูรายวันได้ในแผ่น "รายวัน"',
-    '• รายได้คิดจากราคาของประเภทบริการ ณ วันที่จอง เฉพาะคิวที่นวดเสร็จ (ไม่ใช่ยอดชำระจริง)',
+    '• ราคาในแผ่น "รายการจอง" คือราคาของประเภทบริการ ณ วันที่จอง (ไม่ใช่ยอดชำระจริง)',
     '• ไฟล์นี้มีข้อมูลส่วนบุคคล (รวมเลขบัตรประชาชน) ของผู้รับบริการ — ใช้ภายในหน่วยงานเท่านั้น ห้ามส่งต่อ (PDPA)',
   ].forEach((t, i) => {
     ws.mergeCells(nr + 1 + i, 1, nr + 1 + i, 11);

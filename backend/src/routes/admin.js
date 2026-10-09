@@ -82,8 +82,7 @@ adminRouter.get('/dashboard', ah(async (_req, res) => {
             SUM(a.status = 'COMPLETED') AS completed,
             SUM(a.status = 'NO_SHOW')   AS no_show,
             SUM(a.status = 'CANCELLED') AS cancelled,
-            ROUND(AVG(TIMESTAMPDIFF(MINUTE, sr.service_start, sr.service_end)), 0) AS avg_service_min,
-            SUM(IF(a.status = 'COMPLETED', a.service_price, 0)) AS revenue
+            ROUND(AVG(TIMESTAMPDIFF(MINUTE, sr.service_start, sr.service_end)), 0) AS avg_service_min
        FROM appointments a JOIN time_slots s ON s.slot_id = a.slot_id
        LEFT JOIN service_records sr ON sr.appointment_id = a.appointment_id
       WHERE s.slot_date BETWEEN CURDATE() - INTERVAL 30 DAY AND CURDATE() - INTERVAL 1 DAY`,

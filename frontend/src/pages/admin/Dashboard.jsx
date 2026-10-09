@@ -3,14 +3,14 @@
  *
  *  - วันนี้      : ที่ว่าง (เตียง × รอบ) + จำนวนคิวแยกตามสถานะ
  *  - 7 วันข้างหน้า: แถบความแน่นของคิวรายวัน (ถูกจอง / ที่ทั้งหมด) — สีเดียว + ตัวเลขกำกับทุกแถว
- *  - 30 วันที่ผ่านมา: อัตรามาตามนัด / ไม่มา / ยกเลิก + เวลานวดเฉลี่ย + รายได้ (เฉพาะคิวที่นวดเสร็จ ตามราคาตอนจอง)
+ *  - 30 วันที่ผ่านมา: อัตรามาตามนัด / ไม่มา / ยกเลิก + เวลานวดเฉลี่ย (ไม่แสดงรายได้ — ตามที่หัวหน้ากำหนด)
  *  - ช่องทางการจอง: LINE / kiosk / เคาน์เตอร์ / จองแทน
  */
 import { Link } from 'react-router';
 import { CalendarOff, UserX, ArrowUpRight } from 'lucide-react';
 import { staffApi } from '../../lib/api.js';
 import { useLoad } from '../../lib/useLoad.js';
-import { thaiDateLong, todayYmd, weekdayShort, dayNum, monthShort, relativeDay, baht } from '../../lib/format.js';
+import { thaiDateLong, todayYmd, weekdayShort, dayNum, monthShort, relativeDay } from '../../lib/format.js';
 import { Card, PageHeader, Spinner, cx } from '../../components/ui.jsx';
 
 const CHANNEL_LABEL = { ONLINE: 'LINE', KIOSK: 'เครื่อง kiosk', WALK_IN: 'walk-in ที่เคาน์เตอร์', STAFF: 'เจ้าหน้าที่จองแทน' };
@@ -84,7 +84,6 @@ export function Dashboard() {
               <div><dt className="text-muted">มาตามนัด</dt><dd className="font-display text-[22px] font-semibold">{pct(l.completed, finished)}%</dd></div>
               <div><dt className="text-muted">ไม่มาตามนัด</dt><dd className="font-display text-[22px] font-semibold text-clay">{l.no_show ?? 0} คิว</dd></div>
               <div><dt className="text-muted">ยกเลิก</dt><dd className="font-display text-[22px] font-semibold">{l.cancelled ?? 0} คิว</dd></div>
-              <div className="col-span-2"><dt className="text-muted">รายได้ (คิวที่นวดเสร็จ)</dt><dd className="font-display text-[22px] font-semibold text-herb">{baht(l.revenue ?? 0)}</dd></div>
               <div className="col-span-2"><dt className="text-muted">เวลานวดจริงเฉลี่ย</dt><dd className="font-display text-[22px] font-semibold">{l.avg_service_min ? `${l.avg_service_min} นาที` : 'ยังไม่มีข้อมูล'}</dd></div>
             </dl>
           </Card>

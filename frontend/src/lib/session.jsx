@@ -8,7 +8,8 @@
  *     ผูกแล้ว      → หน้ากรอกรหัส 6 หลัก (หรือรหัสสำรอง)
  *   ต้องเปลี่ยนรหัสผ่าน    → หน้าตั้งรหัสผ่านใหม่
  *   role ไม่มีสิทธิ์แอปนี้ → หน้าแจ้ง + ปุ่มไปแอปที่ role นั้นใช้ได้
- *   ผ่านทั้งหมด            → แสดง children และแชร์ { user, logout } ผ่าน useSession()
+ *   ผ่านทั้งหมด            → แสดง children และแชร์ { user, logout, confirmLogout } ผ่าน useSession()
+ *     confirmLogout = ถามยืนยันก่อน (ใช้กับปุ่มออกจากระบบ) · logout = ออกทันที (ใช้หลังยืนยันรหัสผ่าน kiosk / รีเซ็ต 2FA ตัวเอง)
  *
  * session จริงเก็บเป็น httpOnly cookie ฝั่ง backend — หน้าเว็บไม่ได้ถือ token เอง
  */
@@ -17,7 +18,7 @@ import { useNavigate } from 'react-router';
 import { KeyRound, ShieldAlert, ShieldCheck, Smartphone, Copy, Download, ArrowLeft, LifeBuoy } from 'lucide-react';
 import { staffApi, setUnauthorizedHandler } from './api.js';
 import { CompressMark } from '../components/Logo.jsx';
-import { Button, Field, Input, Spinner, useToast, cx } from '../components/ui.jsx';
+import { Button, Field, Input, Spinner, useToast, useConfirm, cx } from '../components/ui.jsx';
 
 export const ROLE_LABEL = {
   DEV: 'นักพัฒนาระบบ',
@@ -36,7 +37,7 @@ export function homeFor(role) {
 }
 
 const SessionCtx = createContext(null);
-/** { user, logout } ของบัญชีที่ล็อกอินอยู่ */
+/** { user, logout, confirmLogout } ของบัญชีที่ล็อกอินอยู่ */
 export const useSession = () => useContext(SessionCtx);
 
 /**
@@ -48,6 +49,7 @@ export function SessionGate({ roles, appName, children }) {
   const [user, setUser] = useState(undefined); // undefined = กำลังตรวจ, null = ยังไม่ล็อกอิน
   const [pending, setPending] = useState(null); // ขั้น 2FA: { stage: 'setup'|'verify', who: {full_name, username} }
   const navigate = useNavigate();
+  const confirm = useConfirm();
 
   useEffect(() => {
     // API ตอบ 401 (session หมดอายุ) ที่ไหนก็ตาม → กลับหน้าเข้าสู่ระบบ
@@ -60,6 +62,17 @@ export function SessionGate({ roles, appName, children }) {
     setUser(null);
     setPending(null);
   }, []);
+
+  /** ปุ่มออกจากระบบ: ถามก่อน กันกดพลาด (ต้องล็อกอินใหม่ + รหัสจากแอปถ้าใช้ 2FA) */
+  const confirmLogout = useCallback(async () => {
+    const ok = await confirm({
+      title: 'ออกจากระบบ?',
+      body: `คุณ${user?.full_name ?? ''} (${user?.username ?? ''})\nครั้งถัดไปต้องเข้าสู่ระบบด้วยรหัสผ่าน${user?.mfa_enabled ? ' และรหัสจากแอป Authenticator' : ''} อีกครั้ง`,
+      okText: 'ออกจากระบบ',
+      cancelText: 'ยกเลิก',
+    });
+    if (ok) await logout();
+  }, [confirm, logout, user]);
 
   /** ผลจาก /auth/login: ได้ user เลย หรือต้องผ่านขั้น 2FA ก่อน */
   const onPassword = (data) => {
@@ -78,14 +91,20 @@ export function SessionGate({ roles, appName, children }) {
   if (user.role !== 'DEV' && !roles.includes(user.role)) {
     return <NoAccess user={user} onGo={() => navigate(homeFor(user.role))} onLogout={logout} />;
   }
-  return <SessionCtx.Provider value={{ user, logout }}>{children}</SessionCtx.Provider>;
+  return <SessionCtx.Provider value={{ user, logout, confirmLogout }}>{children}</SessionCtx.Provider>;
 }
 
 /** กรอบหน้าเข้าสู่ระบบ / เปลี่ยนรหัส (ใช้ร่วมกัน) */
-function AuthFrame({ children, wide }) {
+/** size: sm = ฟอร์มเล็ก (ค่าเริ่มต้น) · md = รหัสสำรอง · lg = หน้าผูกแอป (จอกว้างแบ่ง 2 คอลัมน์) */
+function AuthFrame({ children, size = 'sm' }) {
   return (
-    <div className="grid min-h-dvh place-items-center bg-ivory px-4 py-10">
-      <div className={cx('anim-rise w-full rounded-3xl border border-line bg-paper p-6 sm:p-8', wide ? 'max-w-md' : 'max-w-sm')}>{children}</div>
+    <div className="grid min-h-dvh place-items-center bg-ivory px-4 py-8 sm:py-12">
+      <div className={cx(
+        'anim-rise w-full rounded-3xl border border-line bg-paper p-6 sm:p-8',
+        { sm: 'max-w-sm', md: 'max-w-lg', lg: 'max-w-md md:max-w-3xl md:p-10' }[size],
+      )}>
+        {children}
+      </div>
     </div>
   );
 }
@@ -238,53 +257,83 @@ function MfaSetup({ who, onDone, onCancel }) {
 
   if (result) return <RecoveryCodes codes={result.recovery_codes} who={who} onContinue={() => onDone(result.user)} />;
 
-  return (
-    <AuthFrame wide>
-      <span className="grid size-12 place-items-center rounded-2xl bg-leaf-soft text-herb"><Smartphone className="size-6" aria-hidden /></span>
-      <h1 className="mt-4 text-[24px] font-semibold">ตั้งค่ายืนยันตัวตน 2 ชั้น</h1>
-      <p className="mt-1 text-muted">คุณ{who.full_name} ({who.username}) — ทำครั้งเดียว ใช้เวลาประมาณ 1 นาที</p>
+  /** กล่อง QR — จอกว้างอยู่คอลัมน์ขวา (ใหญ่) · มือถืออยู่ในขั้นที่ 2 */
+  const qrPanel = (big) => (
+    <>
+      {!info && !error && <Spinner />}
+      {info && (
+        <div className={cx('flex flex-col items-center', big && 'rounded-3xl bg-ivory p-6')}>
+          <img
+            src={info.qr}
+            alt="QR code สำหรับแอป Authenticator"
+            width={big ? 240 : 200}
+            height={big ? 240 : 200}
+            className={cx('rounded-2xl border border-line bg-white p-2', big ? 'size-[240px]' : 'size-[200px]')}
+          />
+          {big && <p className="mt-3 text-center text-[14px] text-muted">สแกนด้วยแอป Authenticator<br />ในมือถือของคุณ</p>}
+        </div>
+      )}
+    </>
+  );
 
-      <ol className="mt-6 space-y-5">
-        <li className="flex gap-3">
-          <Step n={1} />
-          <div className="min-w-0 text-[15px]">
-            <div className="font-medium">ติดตั้งแอปในมือถือของคุณเอง</div>
-            <div className="text-muted">Google Authenticator หรือ Microsoft Authenticator (ฟรี มีทั้ง iPhone และ Android)</div>
-          </div>
-        </li>
-        <li className="flex gap-3">
-          <Step n={2} />
-          <div className="min-w-0 flex-1 text-[15px]">
-            <div className="font-medium">เปิดแอป กด + แล้วสแกน QR นี้</div>
-            {!info && !error && <Spinner />}
-            {info && (
-              <>
-                <img src={info.qr} alt="QR code สำหรับแอป Authenticator" width={200} height={200} className="mt-3 size-[200px] rounded-xl border border-line bg-white p-2" />
-                {/* ตั้งค่าจากมือถือเครื่องเดียวกับแอป → สแกนจอตัวเองไม่ได้ กดลิงก์นี้เปิดแอปแทน */}
-                <a href={info.url} className="mt-2 inline-flex items-center gap-1 rounded-lg bg-leaf-soft px-3 py-2 text-[14px] font-medium text-herb sm:hidden">
-                  <Smartphone className="size-4" aria-hidden />ใช้มือถือเครื่องนี้? กดเพื่อเพิ่มในแอป
-                </a>
-                <details className="mt-2 text-[14px]">
-                  <summary className="cursor-pointer text-herb">สแกนไม่ได้? พิมพ์รหัสเอง</summary>
-                  <p className="mt-2 text-muted">ในแอปเลือก "ป้อนคีย์การตั้งค่า" ชื่อบัญชี: {info.account} · ประเภท: ตามเวลา</p>
-                  <code className="mt-1 block rounded-lg bg-sand px-3 py-2 font-mono text-[15px] break-all select-all">{info.secret}</code>
-                </details>
-                <p className="mt-2 text-[13px] text-faint">อย่าถ่ายรูปหรือส่ง QR นี้ให้คนอื่น — ใครมี QR นี้จะสร้างรหัสของคุณได้</p>
-              </>
-            )}
-          </div>
-        </li>
-        <li className="flex gap-3">
-          <Step n={3} />
-          <form className="min-w-0 flex-1 text-[15px]" onSubmit={(e) => { e.preventDefault(); submit(); }}>
-            <div className="mb-2 font-medium">กรอกรหัส 6 หลักที่แอปแสดง</div>
-            <CodeInput value={code} onChange={setCode} onComplete={submit} disabled={loading || !info} />
-            {error && <p className="mt-3 rounded-xl bg-rose-soft px-4 py-3 text-[15px] text-rose-ink" role="alert">{error}</p>}
-            <Button type="submit" size="lg" className="mt-4 w-full" loading={loading} disabled={code.length !== 6 || !info}>ยืนยันและเปิดใช้</Button>
-          </form>
-        </li>
-      </ol>
-      <button type="button" onClick={onCancel} className="mt-5 inline-flex items-center gap-1 text-[15px] text-muted hover:text-ink"><ArrowLeft className="size-4" aria-hidden />ยกเลิก / เปลี่ยนบัญชี</button>
+  return (
+    <AuthFrame size="lg">
+      <div className="flex items-start gap-4">
+        <span className="grid size-12 shrink-0 place-items-center rounded-2xl bg-leaf-soft text-herb"><Smartphone className="size-6" aria-hidden /></span>
+        <div className="min-w-0">
+          <h1 className="text-[24px] font-semibold leading-tight md:text-[26px]">ตั้งค่ายืนยันตัวตน 2 ชั้น</h1>
+          <p className="mt-1 text-muted">คุณ{who.full_name} ({who.username}) — ทำครั้งเดียว ใช้เวลาประมาณ 1 นาที</p>
+        </div>
+      </div>
+
+      <div className="mt-7 md:grid md:grid-cols-[minmax(0,1fr)_288px] md:gap-10">
+        <ol className="space-y-6">
+          <li className="flex gap-3">
+            <Step n={1} />
+            <div className="min-w-0 text-[15px]">
+              <div className="font-medium">ติดตั้งแอปในมือถือของคุณเอง</div>
+              <div className="text-muted">Google Authenticator หรือ Microsoft Authenticator — ฟรี มีทั้ง iPhone และ Android</div>
+            </div>
+          </li>
+          <li className="flex gap-3">
+            <Step n={2} />
+            <div className="min-w-0 flex-1 text-[15px]">
+              <div className="font-medium">เปิดแอป กด <b>+</b> แล้วสแกน QR<span className="hidden md:inline"> ทางขวา</span></div>
+              <div className="mt-3 md:hidden">{qrPanel(false)}</div>
+              {info && (
+                <>
+                  {/* ตั้งค่าจากมือถือเครื่องเดียวกับแอป → สแกนจอตัวเองไม่ได้ กดลิงก์นี้เปิดแอปแทน */}
+                  <a href={info.url} className="mt-3 inline-flex items-center gap-1 rounded-lg bg-leaf-soft px-3 py-2 text-[14px] font-medium text-herb md:hidden">
+                    <Smartphone className="size-4" aria-hidden />ใช้มือถือเครื่องนี้? กดเพื่อเพิ่มในแอป
+                  </a>
+                  <details className="mt-3 text-[14px]">
+                    <summary className="cursor-pointer text-herb">สแกนไม่ได้? พิมพ์รหัสเอง</summary>
+                    <p className="mt-2 text-muted">ในแอปเลือก "ป้อนคีย์การตั้งค่า" · ชื่อบัญชี: {info.account} · ประเภท: ตามเวลา</p>
+                    <code className="mt-1 block rounded-lg bg-sand px-3 py-2 font-mono text-[15px] break-all select-all">{info.secret}</code>
+                  </details>
+                </>
+              )}
+            </div>
+          </li>
+          <li className="flex gap-3">
+            <Step n={3} />
+            <form className="min-w-0 flex-1 text-[15px]" onSubmit={(e) => { e.preventDefault(); submit(); }}>
+              <div className="mb-2 font-medium">กรอกรหัส 6 หลักที่แอปแสดง</div>
+              <CodeInput value={code} onChange={setCode} onComplete={submit} disabled={loading || !info} />
+              {error && <p className="mt-3 rounded-xl bg-rose-soft px-4 py-3 text-[15px] text-rose-ink" role="alert">{error}</p>}
+              <Button type="submit" size="lg" className="mt-4 w-full" loading={loading} disabled={code.length !== 6 || !info}>ยืนยันและเปิดใช้</Button>
+            </form>
+          </li>
+        </ol>
+
+        <aside className="hidden md:block">
+          {qrPanel(true)}
+          <p className="mt-4 text-[13px] leading-relaxed text-faint">อย่าถ่ายรูปหรือส่ง QR นี้ให้คนอื่น — ใครมี QR นี้จะสร้างรหัสของคุณได้</p>
+        </aside>
+      </div>
+      <p className="mt-4 text-[13px] text-faint md:hidden">อย่าถ่ายรูปหรือส่ง QR นี้ให้คนอื่น — ใครมี QR นี้จะสร้างรหัสของคุณได้</p>
+
+      <button type="button" onClick={onCancel} className="mt-6 inline-flex items-center gap-1 text-[15px] text-muted hover:text-ink"><ArrowLeft className="size-4" aria-hidden />ยกเลิก / เปลี่ยนบัญชี</button>
     </AuthFrame>
   );
 }
@@ -310,11 +359,11 @@ function RecoveryCodes({ codes, who, onContinue }) {
   };
 
   return (
-    <AuthFrame wide>
+    <AuthFrame size="md">
       <span className="grid size-12 place-items-center rounded-2xl bg-leaf-soft text-herb"><ShieldCheck className="size-6" aria-hidden /></span>
       <h1 className="mt-4 text-[24px] font-semibold">เปิดใช้แล้ว — เก็บรหัสสำรองไว้</h1>
       <p className="mt-1 text-muted">ถ้ามือถือหายหรือลืมเอามา ใช้รหัสเหล่านี้เข้าระบบแทนได้ <b className="text-ink">ชุดละ 1 ครั้ง</b> ระบบจะแสดงให้ดูแค่ครั้งนี้</p>
-      <ul className="mt-5 grid grid-cols-2 gap-2 rounded-2xl bg-sand p-4 font-mono text-[17px] tabular-nums">
+      <ul className="mt-5 grid grid-cols-2 gap-x-4 gap-y-2 rounded-2xl bg-sand p-4 font-mono text-[17px] tabular-nums sm:p-5">
         {codes.map((c) => <li key={c} className="text-center select-all">{c}</li>)}
       </ul>
       <div className="mt-3 flex gap-2">
