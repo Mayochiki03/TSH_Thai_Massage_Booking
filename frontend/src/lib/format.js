@@ -1,6 +1,8 @@
 /**
  * lib/format.js — จัดรูปแบบวันที่/เวลาภาษาไทย (พ.ศ., เวลาไทย) + ชื่อสถานะคิว + ตัวเลือกความสัมพันธ์
  */
+import { serverNow } from './api.js';
+
 const tz = 'Asia/Bangkok';
 const toDate = (ymd) => new Date(`${String(ymd).slice(0, 10)}T00:00:00+07:00`);
 
@@ -16,9 +18,9 @@ export const weekdayShort = (ymd) => new Intl.DateTimeFormat('th-TH', { weekday:
 export const dayNum = (ymd) => new Intl.DateTimeFormat('th-TH', { day: 'numeric', timeZone: tz }).format(toDate(ymd));
 export const monthShort = (ymd) => new Intl.DateTimeFormat('th-TH', { month: 'short', timeZone: tz }).format(toDate(ymd));
 
-/** วันนี้ตามเวลาไทย 'YYYY-MM-DD' */
+/** วันนี้ตามเวลาไทย 'YYYY-MM-DD' (ตามนาฬิกาเซิร์ฟเวอร์ — กันเครื่องที่ตั้งวันที่ผิด) */
 export function todayYmd() {
-  return new Intl.DateTimeFormat('en-CA', { timeZone: tz }).format(new Date());
+  return new Intl.DateTimeFormat('en-CA', { timeZone: tz }).format(new Date(serverNow()));
 }
 
 export function addDays(ymd, n) {

@@ -8,7 +8,7 @@
  */
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Play, Square, Save, ChevronRight, Clock, NotebookPen, UserRound, Hand } from 'lucide-react';
-import { staffApi } from '../../lib/api.js';
+import { staffApi, serverNow } from '../../lib/api.js';
 import { thaiDateLong, timeOf, thaiDate, baht } from '../../lib/format.js';
 import { Button, Spinner, StatusBadge, Field, Input, Select, Textarea, useToast, useConfirm, cx } from '../../components/ui.jsx';
 
@@ -250,8 +250,9 @@ function Focus({ a, reload, me, actAs, services }) {
 }
 
 function Timer({ start, end }) {
-  const [now, setNow] = useState(Date.now());
-  useEffect(() => { const t = setInterval(() => setNow(Date.now()), 1000); return () => clearInterval(t); }, []);
+  // ใช้นาฬิกาเซิร์ฟเวอร์ — เวลาเริ่มนวดบันทึกด้วยเวลาเซิร์ฟเวอร์ ถ้าใช้นาฬิกาเครื่องที่ช้า ตัวเลขจะค้าง 00:00
+  const [now, setNow] = useState(serverNow());
+  useEffect(() => { const t = setInterval(() => setNow(serverNow()), 1000); return () => clearInterval(t); }, []);
   const s = parseTs(start);
   if (!s) return null;
   const sec = Math.max(0, Math.floor((now - s.getTime()) / 1000));

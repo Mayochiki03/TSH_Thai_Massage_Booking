@@ -23,6 +23,7 @@ import ExcelJS from 'exceljs';
 import { query, queryOne } from '../db.js';
 import { getSetting } from './settings.js';
 import { revealThaiId, formatThaiId, maskThaiId } from '../utils/nationalId.js';
+import { embedFormulaResults } from '../utils/xlsxResults.js';
 
 // ---------------------------------------------------------------------
 // ค่าคงที่: ชื่อภาษาไทย / สี / รูปแบบตัวเลข
@@ -529,8 +530,9 @@ function buildSummarySheet(ws, rows, daily, people, lists, head, { filtered }) {
       ws.getRow(r).height = 21;
     });
     ws.getCell(tr, col).value = 'รวม';
-    ws.getCell(tr, col + 1).value = { formula: `SUM(${L2}${hr + 1}:${L2}${tr - 1})` };
-    ws.getCell(tr, col + 2).value = { formula: `IF(${L2}${tr}>0,1,0)` };
+    // ไม่มีรายการ (เช่น ช่วงวันที่ไม่มีการจอง) → ใส่ 0 ตรง ๆ ไม่งั้น SUM จะอ้างถึงตัวเอง (circular reference)
+    ws.getCell(tr, col + 1).value = items.length ? { formula: `SUM(${L2}${hr + 1}:${L2}${tr - 1})` } : 0;
+    ws.getCell(tr, col + 2).value = items.length ? { formula: `IF(${L2}${tr}>0,1,0)` } : 0;
     totalCell(ws.getCell(tr, col), { align: 'left' });
     totalCell(ws.getCell(tr, col + 1), { align: 'center', numFmt: FMT.int });
     totalCell(ws.getCell(tr, col + 2), { align: 'center', numFmt: FMT.pct });
@@ -588,7 +590,7 @@ export async function buildBookingReport({ from, to, maskPhone: mask = false, pr
   const wb = new ExcelJS.Workbook();
   wb.creator = 'ระบบจองคิวนวดแผนไทย';
   wb.created = now;
-  wb.calcProperties = { fullCalcOnLoad: true }; // ให้ Excel คำนวณสูตรทั้งหมดตอนเปิดไฟล์
+  wb.calcProperties = { fullCalcOnLoad: true }; // ให้ Excel คำนวณสูตรใหม่ตอนเปิดแก้ไข (ผลที่ฝังไว้ใช้แสดงก่อนกด Enable Editing)
 
   // ลำดับแผ่น = ลำดับที่สร้าง: สรุป → รายวัน → รายการจอง → ผู้รับบริการ
   // สรุปสร้างก่อนแต่เติมทีหลัง เพราะสูตรต้องรู้แถวของแผ่นอื่น
@@ -610,6 +612,8 @@ export async function buildBookingReport({ from, to, maskPhone: mask = false, pr
     practitioners: uniq(bookings.filter((b) => b.status === 'COMPLETED' || b.practitioner_name).map((b) => b.practitioner_name || '')),
   };
   buildSummarySheet(summary, rows, dailyInfo, people, lists, head, { filtered });
+  // ฝังผลลัพธ์ของสูตรไว้ในไฟล์ — เปิดใน Protected View / preview ก็เห็นตัวเลขทันที
+  embedFormulaResults(wb);
 
   const filename = `${practitionerName ? `รายงานหมอนวด_${practitionerName.replace(/[\\/:*?"<>|\s]+/g, '-')}` : 'รายงานการจอง'}_${from}${from === to ? '' : `_ถึง_${to}`}.xlsx`;
   return { workbook: wb, filename, count: bookings.length };

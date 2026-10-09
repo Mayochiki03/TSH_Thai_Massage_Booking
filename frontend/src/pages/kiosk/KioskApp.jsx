@@ -25,7 +25,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router';
 import { CalendarPlus, ScanLine, ChevronLeft, Delete, Check, Hand, CircleAlert, Home, LayoutDashboard, LockKeyhole } from 'lucide-react';
-import { staffApi } from '../../lib/api.js';
+import { staffApi, serverNow } from '../../lib/api.js';
 import { SessionGate, useSession, homeFor } from '../../lib/session.jsx';
 import { relativeDay, weekdayShort, dayNum, monthShort, thaiDateLong, todayYmd, baht, serviceLabel } from '../../lib/format.js';
 import { formatThaiId, thaiIdError } from '../../lib/thaiId.js';
@@ -125,11 +125,11 @@ function Kiosk() {
  * onLongPress: กดค้างที่โลโก้ 3 วินาที (ทางออกลับสำหรับเจ้าหน้าที่ บนเครื่อง kiosk จริง)
  */
 function TopBar({ clinic, onLongPress }) {
-  const [now, setNow] = useState(new Date());
+  const [now, setNow] = useState(() => new Date(serverNow()));
   const holdTimer = useRef(null);
   const startHold = () => { if (onLongPress) holdTimer.current = setTimeout(onLongPress, 3000); };
   const cancelHold = () => clearTimeout(holdTimer.current);
-  useEffect(() => { const t = setInterval(() => setNow(new Date()), 15_000); return () => clearInterval(t); }, []);
+  useEffect(() => { const t = setInterval(() => setNow(new Date(serverNow())), 15_000); return () => clearInterval(t); }, []);
   const time = new Intl.DateTimeFormat('th-TH', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Bangkok' }).format(now);
   return (
     <header className="flex items-center justify-between gap-[1em] border-b border-line bg-paper px-[1.5em] py-[0.7em]">
