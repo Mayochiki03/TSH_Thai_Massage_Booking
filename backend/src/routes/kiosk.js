@@ -32,7 +32,7 @@ kioskRouter.use(requireRole('KIOSK'));
 const maskName = (first, last) => `${first} ${String(last).charAt(0)}${'*'.repeat(Math.max(2, Math.min(4, String(last).length - 1)))}`;
 
 kioskRouter.get('/config', ah(async (_req, res) => {
-  const s = await getSettings(['clinic_name', 'counter_phone', 'kiosk_idle_sec', 'checkin_early_min', 'show_price']);
+  const s = await getSettings(['clinic_name', 'counter_phone', 'kiosk_idle_sec', 'checkin_early_min', 'show_price', 'checkin_note']);
   res.json({ ...s, service_types: booking.publicServiceTypes(await booking.listServiceTypes(), s.show_price) });
 }));
 

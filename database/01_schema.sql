@@ -268,7 +268,7 @@ CREATE TABLE patient_suspensions (
 CREATE TABLE notification_templates (
   type        ENUM('BOOKED','REMIND_1D','REMIND_2H','CANCELLED','HOLIDAY_CANCELLED','SUSPENDED') PRIMARY KEY,
   title       VARCHAR(100) NOT NULL,
-  body        TEXT NOT NULL,     -- ตัวแปร: {patient_name} {date} {time} {code} {reason} {end_date} {rebook_url}
+  body        TEXT NOT NULL,     -- ตัวแปร: {patient_name} {date} {time} {code} {service} {price} {checkin_note} {reason} {end_date} {rebook_url}
   is_enabled  BOOLEAN NOT NULL DEFAULT TRUE,
   updated_at  TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 );

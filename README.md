@@ -127,6 +127,7 @@ npm start          # เปิด backend ตัวเดียว ส่งท�
 > - v0.5 → v0.6: `mysql -u root -p -e "source migrations/002_beds_services_nid.sql"` (หลายเตียง, ประเภทบริการ, เลขบัตร, หมอนวด, VN) — **สำรองฐานข้อมูลก่อน**
 > - v0.6.0 → v0.6.1: `mysql -u root -p -e "source migrations/003_show_price.sql"` (สวิตช์แสดงราคา)
 > - v0.6.x → v0.7.0: `mysql -u root -p -e "source migrations/004_mfa.sql"` (2FA) — แล้วเพิ่ม `MFA_REQUIRED_ROLES=DEV,ADMIN` ใน `.env` (ไม่ใส่ก็ได้ ค่าเริ่มต้นเท่านี้)
+> - v0.7.1 → v0.7.2: `mysql -u root -p -e "source migrations/005_checkin_note.sql"` (คำแนะนำการมารับบริการ)
 >
 > ถ้าพิมพ์ `mysql` แล้วขึ้น "not recognized" ให้ใช้ที่อยู่เต็ม: `& "C:\Program Files\MySQL\MySQL Server 8.0\bin\mysql.exe" -u root -p ...`
 

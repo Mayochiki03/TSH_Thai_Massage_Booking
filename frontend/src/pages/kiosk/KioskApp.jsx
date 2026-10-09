@@ -82,7 +82,7 @@ function Kiosk() {
       <TopBar clinic={config?.clinic_name} onLongPress={isPreview ? undefined : () => setExitOpen(true)} />
       <main className="min-h-0 flex-1 overflow-y-auto px-[1.5em] py-[1em]">
         {screen === 'home' && <HomeScreen onBook={() => setScreen('book')} onCheckIn={() => setScreen('checkin')} />}
-        {screen === 'book' && <BookFlow key={`b${resetKey}`} onHome={goHome} services={config?.service_types ?? []} />}
+        {screen === 'book' && <BookFlow key={`b${resetKey}`} onHome={goHome} services={config?.service_types ?? []} checkinNote={config?.checkin_note} />}
         {screen === 'checkin' && <CheckInFlow key={`c${resetKey}`} onHome={goHome} />}
       </main>
       <footer className="flex items-center justify-between gap-[1em] border-t border-line bg-paper px-[1.5em] py-[0.6em] text-[0.85em] text-muted">
@@ -326,7 +326,7 @@ function Done({ ticket, title, message, onHome }) {
 // =====================================================================
 // จองคิว walk-in
 // =====================================================================
-function BookFlow({ onHome, services }) {
+function BookFlow({ onHome, services, checkinNote }) {
   const [step, setStep] = useState(0);            // 0 รอบเวลา, 1 ผู้รับบริการ, 2 เลขบัตร (ถ้าต้องกรอก), 3 บริการ + ยืนยัน
   const [days, setDays] = useState(null);
   const [date, setDate] = useState(null);
@@ -384,7 +384,7 @@ function BookFlow({ onHome, services }) {
   if (ticket) {
     const inNow = ticket.status === 'CHECKED_IN';
     return <Done ticket={ticket} title={inNow ? 'จองและเช็กอินเรียบร้อย' : 'จองคิวสำเร็จ'} onHome={onHome}
-      message={inNow ? 'กรุณานั่งรอเรียกชื่อบริเวณหน้าห้องนวด' : 'ถ่ายรูปหน้าจอนี้เก็บไว้ แล้วมาเช็กอินที่เครื่องนี้ก่อนเวลานัด 10–15 นาที'} />;
+      message={inNow ? 'กรุณานั่งรอเรียกชื่อบริเวณหน้าห้องนวด' : `ถ่ายรูปหน้าจอนี้เก็บไว้ · ${checkinNote || 'มาเช็กอินที่เครื่องนี้ก่อนเวลานัด'}`} />;
   }
 
   const day = days?.find((d) => d.date === date);

@@ -313,7 +313,7 @@ export function BookPage() {
           {needsId && !idOk && <p className="mt-3 text-[14px] text-clay">กรอกเลขบัตรประชาชนของผู้รับบริการก่อนจอง</p>}
           <Button size="lg" className="mt-5 w-full" disabled={!ready} onClick={() => setReviewing(true)}>ตรวจสอบและจองคิว</Button>
           <p className="mt-4 rounded-xl bg-sand px-4 py-3 text-[14px] text-clay">
-            มาเช็กอินก่อนเวลานัด 10–15 นาที ยกเลิกเองได้ถึง {Math.round(config.patient_cancel_min / 60)} ชั่วโมงก่อนนัด
+            {config.checkin_note} · ยกเลิกเองได้ถึง {Math.round(config.patient_cancel_min / 60)} ชั่วโมงก่อนนัด
           </p>
         </div>
       </aside>
@@ -349,9 +349,11 @@ export function BookPage() {
             {complaint.trim() && <Row label="อาการ" value={complaint.trim()} />}
           </dl>
         )}
-        <p className="mt-4 text-[15px] text-muted">
-          กรุณามาเช็กอินที่เคาน์เตอร์ก่อนเวลานัด 10–15 นาที ยกเลิกเองได้ถึง {Math.round(config.patient_cancel_min / 60)} ชั่วโมงก่อนนัด
-        </p>
+        {/* คำแนะนำการมารับบริการ — ให้เห็นก่อนกดยืนยัน (ค่าเดียวกับบนตั๋ว / ข้อความ LINE) */}
+        {config.checkin_note && (
+          <p className="mt-4 rounded-xl bg-turmeric-soft px-4 py-3 text-[15px] font-medium text-[#6b520c]">⚠️ {config.checkin_note}</p>
+        )}
+        <p className="mt-3 text-[15px] text-muted">ยกเลิกเองได้ถึง {Math.round(config.patient_cancel_min / 60)} ชั่วโมงก่อนนัด</p>
       </Sheet>
 
       <PersonSheet

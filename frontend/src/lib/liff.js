@@ -143,7 +143,9 @@ function ticketFlex(t) {
           row('วันที่', thaiDate(t.slot_date)),
           row('เวลา', `${t.start_time}–${t.end_time} น.`),
           ...(t.service ? [row('บริการ', t.service.price == null ? t.service.name : `${t.service.name} (${Number(t.service.price).toLocaleString('th-TH')} บาท)`)] : []),
-          { type: 'text', text: 'แสดงรหัสนี้ที่เคาน์เตอร์ก่อนเวลานัด 10–15 นาที', size: 'xs', color: '#8A9A91', wrap: true, margin: 'md' },
+          // คำแนะนำการมารับบริการ (ค่าเดียวกับหน้าเว็บ / ข้อความ LINE — ตั้งได้ที่หน้า "กฎการจอง")
+          ...(state.config?.checkin_note ? [{ type: 'text', text: state.config.checkin_note, size: 'sm', color: '#8C5E3C', weight: 'bold', wrap: true, margin: 'lg' }] : []),
+          { type: 'text', text: 'แจ้งรหัสจองนี้ที่ห้องนวดแผนไทย', size: 'xs', color: '#8A9A91', wrap: true, margin: 'sm' },
         ],
       },
       footer: {

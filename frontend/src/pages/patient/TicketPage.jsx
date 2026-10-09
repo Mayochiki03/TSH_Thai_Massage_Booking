@@ -161,7 +161,7 @@ export function TicketPage() {
 
         {t.status === 'BOOKED' && (
           <div className="mx-6 mb-6 rounded-xl bg-turmeric-soft px-4 py-3 text-[15px] text-[#6b520c] md:hidden">
-            แสดงรหัสนี้ที่เคาน์เตอร์แพทย์แผนไทย ก่อนเวลานัด 10–15 นาที
+            {config.checkin_note} แล้วแจ้งรหัสจองนี้
           </div>
         )}
       </article>
@@ -170,7 +170,7 @@ export function TicketPage() {
       <div className="space-y-3">
         <div className="hidden rounded-2xl bg-sand px-5 py-4 text-[15px] text-clay md:block">
           <p className="font-display font-medium">วันนัดหมาย</p>
-          <p className="mt-1">มาถึงก่อนเวลานัด 10–15 นาที แจ้งรหัสจองที่เคาน์เตอร์แพทย์แผนไทย ถ้ามาสายเกิน 10 นาทีคิวจะถูกยกเลิก</p>
+          <p className="mt-1">{config.checkin_note} แล้วแจ้งรหัสจองที่ห้องนวด{config.no_show_after_min ? ` · ถ้ามาสายเกิน ${config.no_show_after_min} นาทีคิวจะถูกยกเลิก` : ''}</p>
         </div>
         {t.can_confirm && (
           <Button size="lg" icon={CircleCheck} className="w-full" loading={busy === 'confirm'} onClick={doConfirm}>ยืนยันว่ามาตามนัด</Button>

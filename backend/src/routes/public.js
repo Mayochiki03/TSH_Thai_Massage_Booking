@@ -27,7 +27,7 @@ export const publicRouter = Router();
 // ค่าที่หน้าเว็บต้องใช้ก่อนล็อกอิน
 // ---------------------------------------------------------------------
 publicRouter.get('/config', ah(async (req, res) => {
-  const s = await getSettings(['clinic_name', 'counter_phone', 'advance_booking_days', 'patient_cancel_min', 'allow_same_day', 'show_price']);
+  const s = await getSettings(['clinic_name', 'counter_phone', 'advance_booking_days', 'patient_cancel_min', 'allow_same_day', 'show_price', 'checkin_note', 'no_show_after_min']);
   const [c, serviceTypes] = await Promise.all([lineConfig(), booking.listServiceTypes()]);
   res.json({
     clinic_name: s.clinic_name,
@@ -35,6 +35,8 @@ publicRouter.get('/config', ah(async (req, res) => {
     advance_booking_days: s.advance_booking_days,
     allow_same_day: s.allow_same_day,
     patient_cancel_min: s.patient_cancel_min,
+    checkin_note: s.checkin_note,           // คำแนะนำการมารับบริการ (ตั้งได้ที่หน้า "กฎการจอง")
+    no_show_after_min: s.no_show_after_min, // มาสายเกินกี่นาทีถูกตัดสิทธิ์
     // ปิด "แสดงราคา" → ตัดราคาออกตั้งแต่ backend (หน้าเว็บไม่ได้รับราคาเลย ไม่ใช่แค่ซ่อน)
     show_price: s.show_price,
     service_types: booking.publicServiceTypes(serviceTypes, s.show_price),

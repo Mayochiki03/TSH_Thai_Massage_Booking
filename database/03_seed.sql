@@ -76,6 +76,8 @@ INSERT INTO settings (setting_key, setting_value, label, category, value_type, s
   ('counter_phone',        '',          'เบอร์โทรเคาน์เตอร์ (แสดงในหน้าตั๋ว)',                  'GENERAL', 'STRING', 2),
   ('remind_1d_hour',       '17',        'เวลาส่งเตือนล่วงหน้า 1 วัน (ชั่วโมง 0–23)',             'GENERAL', 'INT',    3),
   ('kiosk_idle_sec',       '60',        'kiosk กลับหน้าแรกเองเมื่อไม่มีคนใช้ (วินาที)',          'GENERAL', 'INT',    4),
+  -- ข้อความเดียว ใช้ทุกที่: หน้าจอง / ตั๋ว / การ์ดตั๋วในแชท / ตู้ kiosk / ข้อความ LINE ผ่านตัวแปร {checkin_note}
+  ('checkin_note',         'กรุณานำบัตรประชาชนไปติดต่อห้องเวชระเบียนก่อน แล้วจึงมาที่ห้องนวดแผนไทยก่อนเวลานัด 15–20 นาที', 'คำแนะนำการมารับบริการ (แสดงบนหน้าจอง ตั๋ว kiosk และข้อความ LINE)', 'GENERAL', 'STRING', 0),
   -- การเชื่อมต่อ (กรอกในเมนู "การเชื่อมต่อระบบ")
   ('connection_mode',      'LOCAL',     'โหมดการเชื่อมต่อ (LOCAL / DEV_TUNNEL / PRODUCTION)',   'CONNECTION', 'STRING', 1),
   ('public_base_url',      '',          'Public URL (https://...)',                            'CONNECTION', 'STRING', 2),
@@ -89,11 +91,11 @@ INSERT INTO settings (setting_key, setting_value, label, category, value_type, s
 -- ---------------------------------------------------------------------
 INSERT INTO notification_templates (type, title, body, is_enabled) VALUES
   ('BOOKED', 'จองคิวสำเร็จ',
-   'จองคิวนวดแผนไทยสำเร็จ\nผู้รับบริการ: {patient_name}\nบริการ: {service} ({price})\nวันที่: {date}\nเวลา: {time}\nรหัสจอง: {code}\n\nกรุณามาเช็กอินที่เคาน์เตอร์ก่อนเวลานัด 10–15 นาที', TRUE),
+   'จองคิวนวดแผนไทยสำเร็จ\nผู้รับบริการ: {patient_name}\nบริการ: {service} ({price})\nวันที่: {date}\nเวลา: {time}\nรหัสจอง: {code}\n\n{checkin_note}', TRUE),
   ('REMIND_1D', 'เตือนนัดพรุ่งนี้',
-   'พรุ่งนี้คุณ {patient_name} มีนัดนวดแผนไทย\nวันที่: {date} เวลา: {time}\nรหัสจอง: {code}', FALSE),
+   'พรุ่งนี้คุณ {patient_name} มีนัดนวดแผนไทย\nวันที่: {date} เวลา: {time}\nรหัสจอง: {code}\n\n{checkin_note}', FALSE),
   ('REMIND_2H', 'อีก 2 ชั่วโมงถึงเวลานัด',
-   'อีก 2 ชั่วโมงถึงเวลานัดนวดแผนไทยของคุณ {patient_name}\nเวลา: {time} · รหัสจอง: {code}\nกรุณากด "ยืนยัน" หากมาตามนัด หรือ "ยกเลิก" หากไม่สะดวก', TRUE),
+   'อีก 2 ชั่วโมงถึงเวลานัดนวดแผนไทยของคุณ {patient_name}\nเวลา: {time} · รหัสจอง: {code}\n{checkin_note}\nกรุณากด "ยืนยัน" หากมาตามนัด หรือ "ยกเลิก" หากไม่สะดวก', TRUE),
   ('CANCELLED', 'ยกเลิกคิวแล้ว',
    'คิวของคุณ {patient_name} วันที่ {date} เวลา {time} (รหัส {code}) ถูกยกเลิกแล้ว\nเหตุผล: {reason}', TRUE),
   ('HOLIDAY_CANCELLED', 'ขออภัย คิวของคุณถูกยกเลิก',

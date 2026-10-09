@@ -33,6 +33,7 @@ export async function notifyAppointment(type, appointmentId, extraVars = {}) {
     service: a.service_name ?? '',
     // ปิด "แสดงราคา" → {price} เป็นค่าว่าง (และวงเล็บว่าง "()" ถูกตัดทิ้งตอนสร้างข้อความ)
     price: a.service_price == null || !(await getSetting('show_price')) ? '' : `${Number(a.service_price).toLocaleString('th-TH')} บาท`,
+    checkin_note: (await getSetting('checkin_note')) || '',
     rebook_url: await patientUrl('/'),
     ...extraVars,
   };

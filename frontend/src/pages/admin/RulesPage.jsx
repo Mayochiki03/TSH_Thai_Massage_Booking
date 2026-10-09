@@ -3,6 +3,7 @@
  *
  * ค่าทุกตัวมาจากตาราง settings — หน้านี้แค่เลือกช่องกรอกให้เหมาะกับชนิดค่า:
  *   INT → ช่องตัวเลข + หน่วย, BOOL → สวิตช์, open_weekdays → ปุ่มเลือกวัน, STRING → ช่องข้อความ
+ *   ข้อความยาว (LONG_TEXT เช่น checkin_note) → กล่องหลายบรรทัดเต็มความกว้าง
  * กด "บันทึก" ส่งเฉพาะค่าที่แก้ (backend ตรวจรูปแบบซ้ำอีกชั้น)
  * ค่าการเชื่อมต่อ LINE ไม่อยู่ที่นี่ — อยู่ในเมนูนักพัฒนา
  */
@@ -10,7 +11,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Save, RotateCcw } from 'lucide-react';
 import { staffApi } from '../../lib/api.js';
 import { useLoad } from '../../lib/useLoad.js';
-import { Button, Card, Input, PageHeader, Spinner, Switch, useToast, cx } from '../../components/ui.jsx';
+import { Button, Card, Input, Textarea, PageHeader, Spinner, Switch, useToast, cx } from '../../components/ui.jsx';
 
 /** หน่วย/คำอธิบายเพิ่มเติมของค่าตัวเลข (key → หน่วย) */
 const UNIT = {
@@ -23,6 +24,10 @@ const SECTIONS = [
   { category: 'SUSPENSION', title: 'ระงับสิทธิ์เมื่อไม่มาตามนัด', description: 'เปิดอัตโนมัติแล้วระบบจะระงับสิทธิ์ให้เองเมื่อครบเกณฑ์' },
   { category: 'GENERAL', title: 'ทั่วไป', description: 'ชื่อที่แสดง เบอร์ติดต่อ และเวลาส่งข้อความ' },
 ];
+/** ค่าข้อความยาวที่แสดงให้ผู้รับบริการเห็น → กล่องหลายบรรทัด + คำอธิบาย */
+const LONG_TEXT = {
+  checkin_note: 'แสดงบนหน้าจอง ตั๋ว การ์ดตั๋วในแชท LINE ตู้ kiosk และข้อความ LINE ที่ใช้ตัวแปร {checkin_note} — แก้ที่นี่ที่เดียว มีผลทุกที่ทันที',
+};
 const WEEKDAYS = ['จ.', 'อ.', 'พ.', 'พฤ.', 'ศ.', 'ส.', 'อา.'];
 
 export function RulesPage() {
@@ -105,6 +110,16 @@ function SettingInput({ s, value, onChange }) {
           ))}
         </div>
       </div>
+    );
+  }
+
+  if (LONG_TEXT[s.key]) {
+    return (
+      <label className="block">
+        <span className="block font-medium">{s.label}</span>
+        <span className="mt-0.5 block text-[14px] text-muted">{LONG_TEXT[s.key]}</span>
+        <Textarea value={value} onChange={(e) => onChange(e.target.value)} rows={3} maxLength={500} className="mt-2" />
+      </label>
     );
   }
 
