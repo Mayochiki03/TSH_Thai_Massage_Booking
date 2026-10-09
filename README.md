@@ -126,10 +126,13 @@ npm start          # เปิด backend ตัวเดียว ส่งท�
 > - v0.2 → v0.3: `mysql -u root -p -e "source migrations/001_roles_kiosk.sql"`
 > - v0.5 → v0.6: `mysql -u root -p -e "source migrations/002_beds_services_nid.sql"` (หลายเตียง, ประเภทบริการ, เลขบัตร, หมอนวด, VN) — **สำรองฐานข้อมูลก่อน**
 > - v0.6.0 → v0.6.1: `mysql -u root -p -e "source migrations/003_show_price.sql"` (สวิตช์แสดงราคา)
+> - v0.6.x → v0.7.0: `mysql -u root -p -e "source migrations/004_mfa.sql"` (2FA) — แล้วเพิ่ม `MFA_REQUIRED_ROLES=DEV,ADMIN` ใน `.env` (ไม่ใส่ก็ได้ ค่าเริ่มต้นเท่านี้)
 >
 > ถ้าพิมพ์ `mysql` แล้วขึ้น "not recognized" ให้ใช้ที่อยู่เต็ม: `& "C:\Program Files\MySQL\MySQL Server 8.0\bin\mysql.exe" -u root -p ...`
 
 ### บัญชีทดสอบ (dev) — รหัสผ่าน `admin1234` ทุกบัญชี
+
+> `dev` และ `admin` ต้องผูกแอป Authenticator ตอนล็อกอินครั้งแรก (เตรียมมือถือไว้) · บัญชีอื่นไม่ต้อง เว้นแต่แอดมินเปิดบังคับ
 
 | username | บทบาท | เปิดที่ |
 |---|---|---|
@@ -169,6 +172,7 @@ cloudflared tunnel --protocol http2 --url http://127.0.0.1:4000
 ## ความปลอดภัย
 
 - รหัสผ่าน bcrypt · session JWT ใน httpOnly cookie · บังคับเปลี่ยนรหัสผ่านครั้งแรก · ล็อกอินผิดเกิน 10 ครั้ง/15 นาทีถูกพัก
+- **ยืนยันตัวตน 2 ชั้น (แอป Authenticator)** บังคับสำหรับผู้ดูแล/นักพัฒนา เลือกบังคับรายคนได้ · รหัสสำรอง 10 ชุด · แอดมินรีเซ็ตได้เมื่อมือถือหาย · รีเซ็ตแล้ว session เดิมทุกเครื่องหลุด
 - ผู้จองตรวจ LINE ID token ทุก request · kiosk ยืนยันเช็กอินด้วยเลขท้ายเบอร์โทร
 - LINE token และเลขบัตรประชาชนเข้ารหัส AES-256-GCM (เปิดดูเลขเต็มที่หน้าผู้ดูแลถูกบันทึก audit log) · rate limit · helmet · parameterized query · MySQL user สิทธิ์จำกัด
 - ⚠ **ห้ามเปลี่ยน `APP_SECRET_KEY` หลังมีข้อมูลจริง** — เลขบัตรประชาชนและ LINE token ที่เก็บไว้จะถอดรหัส/ค้นหาไม่ได้ (ตั้งค่าใหม่ก่อนเริ่มใช้งานจริงครั้งเดียว และเก็บสำรองไว้ที่ปลอดภัย)

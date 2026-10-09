@@ -2,6 +2,9 @@
  * pages/admin/UsersPage.jsx — บัญชีผู้ใช้ระบบ + รายชื่อหมอนวด
  *
  *  แท็บ "บัญชีผู้ใช้" : CRUD /api/admin/users, รีเซ็ตรหัสผ่าน (ผู้ใช้ต้องเปลี่ยนเองตอนล็อกอินครั้งถัดไป)
+ *                      ยืนยันตัวตน 2 ชั้น (2FA): คอลัมน์สถานะ, สวิตช์ "บังคับใช้ 2FA" (เคาน์เตอร์/หมอนวด),
+ *                      ปุ่ม "รีเซ็ต 2FA" กรณีมือถือหาย/เปลี่ยนเครื่อง → ล้างแอปเดิม + ตัด session ทุกเครื่อง
+ *                      → ล็อกอินครั้งถัดไปผู้ใช้สแกน QR ใหม่เอง (แอดมินไม่ต้องยุ่งกับ QR ของใคร)
  *                      ผู้ดูแล (ADMIN) จัดการบัญชีนักพัฒนา (DEV) ไม่ได้ — backend บังคับอีกชั้น
  *  แท็บ "หมอนวด"     : CRUD /api/admin/practitioners — รายชื่อคนที่ "นวด" (ใช้บันทึกว่าใครนวดคิวไหน + กรองรายงาน)
  *                      ปิด "ปฏิบัติงาน" = ไม่โผล่ให้เลือกตอนเริ่มนวด (ประวัติเดิมยังอยู่)
@@ -11,11 +14,28 @@
  *  จำนวนหมอนวดไม่ได้กำหนดจำนวนเตียง — ตั้งเตียงที่เมนู "รอบเวลาและเตียง"
  */
 import { useEffect, useState } from 'react';
-import { UserPlus, KeyRound, Pencil, Plus, Save } from 'lucide-react';
+import { UserPlus, KeyRound, Pencil, Plus, Save, ShieldCheck, ShieldAlert, ShieldOff, Smartphone, RotateCcw } from 'lucide-react';
 import { staffApi } from '../../lib/api.js';
 import { useLoad } from '../../lib/useLoad.js';
 import { useSession, ROLE_LABEL } from '../../lib/session.jsx';
-import { Button, Card, Field, Input, PageHeader, Segmented, Select, Sheet, Spinner, Switch, useToast, cx } from '../../components/ui.jsx';
+import { Button, Card, Field, Input, PageHeader, Segmented, Select, Sheet, Spinner, Switch, useToast, useConfirm, cx } from '../../components/ui.jsx';
+
+/** ป้ายสถานะ 2FA ในตาราง */
+const MFA_BADGE = {
+  ENABLED: { icon: ShieldCheck, label: 'เปิดแล้ว', cls: 'bg-leaf-soft text-herb' },
+  PENDING: { icon: ShieldAlert, label: 'รอผูกแอป', cls: 'bg-turmeric-soft text-[#7a5e0e]' },
+  OFF: { icon: ShieldOff, label: 'ไม่ใช้', cls: 'bg-sand text-muted' },
+};
+function MfaBadge({ user }) {
+  if (user.role === 'KIOSK') return <span className="text-[14px] text-faint">ไม่ใช้ (kiosk)</span>;
+  const b = MFA_BADGE[user.mfa_state];
+  return (
+    <span className={cx('inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-[13px] font-medium', b.cls)}>
+      <b.icon className="size-3.5" aria-hidden />{b.label}
+      {user.mfa_state === 'ENABLED' && user.recovery_left <= 3 && <span className="font-normal">· สำรองเหลือ {user.recovery_left}</span>}
+    </span>
+  );
+}
 
 export function UsersPage() {
   const [tab, setTab] = useState('users');
@@ -30,12 +50,12 @@ export function UsersPage() {
 
 // ---------------------------------------------------------------------
 function Users() {
-  const { user: me } = useSession();
+  const { user: me, logout } = useSession();
   const { data, reload } = useLoad(() => Promise.all([staffApi('/admin/users'), staffApi('/admin/practitioners')]), []);
   const [edit, setEdit] = useState(null); // null | 'new' | user
 
   if (!data) return <Spinner />;
-  const [{ users }, { practitioners }] = data;
+  const [{ users, mfa_required_roles: mfaRoles }, { practitioners }] = data;
   const canManage = (u) => me.role === 'DEV' || u.role !== 'DEV';
 
   return (
@@ -43,9 +63,9 @@ function Users() {
       <div className="mb-4 flex justify-end"><Button icon={UserPlus} onClick={() => setEdit('new')}>เพิ่มบัญชี</Button></div>
       <Card bodyClassName="p-0">
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[680px] text-left text-[15px]">
+          <table className="w-full min-w-[780px] text-left text-[15px]">
             <thead className="border-b border-line text-[14px] text-muted">
-              <tr><th className="px-5 py-3 font-medium">ชื่อ</th><th className="px-3 py-3 font-medium">ชื่อผู้ใช้</th><th className="px-3 py-3 font-medium">บทบาท</th><th className="px-3 py-3 font-medium">เข้าระบบล่าสุด</th><th className="px-5 py-3" /></tr>
+              <tr><th className="px-5 py-3 font-medium">ชื่อ</th><th className="px-3 py-3 font-medium">ชื่อผู้ใช้</th><th className="px-3 py-3 font-medium">บทบาท</th><th className="px-3 py-3 font-medium">ยืนยัน 2 ชั้น</th><th className="px-3 py-3 font-medium">เข้าระบบล่าสุด</th><th className="px-5 py-3" /></tr>
             </thead>
             <tbody className="divide-y divide-line">
               {users.map((u) => (
@@ -53,6 +73,7 @@ function Users() {
                   <td className="px-5 py-3 font-medium">{u.full_name}{!u.is_active && ' (ปิดใช้งาน)'}{u.user_id === me.user_id && <span className="text-muted"> (คุณ)</span>}</td>
                   <td className="px-3 py-3">{u.username}</td>
                   <td className="px-3 py-3">{ROLE_LABEL[u.role]}{u.must_change_password ? <span className="text-clay"> รอเปลี่ยนรหัส</span> : ''}</td>
+                  <td className="px-3 py-3"><MfaBadge user={u} /></td>
                   <td className="px-3 py-3 tabular-nums text-muted">{u.last_login_at?.slice(0, 16) ?? '-'}</td>
                   <td className="px-5 py-3 text-right">
                     {canManage(u) && (
@@ -67,24 +88,29 @@ function Users() {
           </table>
         </div>
       </Card>
-      <UserSheet user={edit} practitioners={practitioners} isDev={me.role === 'DEV'} onClose={() => setEdit(null)} onSaved={reload} />
+      <p className="mt-3 text-[14px] text-faint">
+        ยืนยันตัวตน 2 ชั้น: บังคับเสมอสำหรับ {mfaRoles.map((r) => ROLE_LABEL[r]).join(' / ') || '— (ปิดบังคับไว้ — ใช้กับเครื่องทดสอบเท่านั้น)'} ·
+        บัญชีอื่นเลือกบังคับรายคนได้ · "รอผูกแอป" = จะเห็น QR ให้สแกนตอนล็อกอินครั้งถัดไป
+      </p>
+      <UserSheet user={edit} me={me} mfaRoles={mfaRoles} practitioners={practitioners} isDev={me.role === 'DEV'} onClose={() => setEdit(null)} onSaved={reload} onSelfReset={logout} />
     </>
   );
 }
 
-function UserSheet({ user, practitioners, isDev, onClose, onSaved }) {
+function UserSheet({ user, me, mfaRoles, practitioners, isDev, onClose, onSaved, onSelfReset }) {
   const isNew = user === 'new';
   const [form, setForm] = useState({});
   const [pw, setPw] = useState('');
   const [busy, setBusy] = useState(null);
   const toast = useToast();
+  const confirm = useConfirm();
 
   useEffect(() => {
     if (!user) return;
     setPw('');
     setForm(isNew
-      ? { username: '', full_name: '', role: 'STAFF', practitioner_id: practitioners[0]?.practitioner_id ?? null, is_active: true }
-      : { username: user.username, full_name: user.full_name, role: user.role, practitioner_id: user.practitioner_id, is_active: !!user.is_active });
+      ? { username: '', full_name: '', role: 'STAFF', practitioner_id: practitioners[0]?.practitioner_id ?? null, is_active: true, totp_required: false }
+      : { username: user.username, full_name: user.full_name, role: user.role, practitioner_id: user.practitioner_id, is_active: !!user.is_active, totp_required: !!user.totp_required });
   }, [user, isNew, practitioners]);
   if (!user) return null;
 
@@ -100,6 +126,26 @@ function UserSheet({ user, practitioners, isDev, onClose, onSaved }) {
       toast(isNew ? 'สร้างบัญชีแล้ว ผู้ใช้ต้องเปลี่ยนรหัสตอนเข้าครั้งแรก' : 'บันทึกแล้ว');
       onSaved(); onClose();
     } catch (err) { toast(err.fields ? Object.values(err.fields)[0][0] : err.message, 'error'); }
+    finally { setBusy(null); }
+  };
+
+  /** มือถือหาย / เปลี่ยนเครื่อง → ล้าง 2FA เดิม (ผู้ใช้สแกน QR ใหม่เองตอนล็อกอินครั้งถัดไป) */
+  const resetMfa = async () => {
+    const self = user.user_id === me.user_id;
+    const ok = await confirm({
+      title: `รีเซ็ต 2FA ของ ${user.username}?`,
+      body: `ใช้เมื่อมือถือหาย เปลี่ยนเครื่อง หรือลบแอปไปแล้ว\n• แอป Authenticator ในมือถือเครื่องเดิม และรหัสสำรองเดิมจะใช้ไม่ได้ทันที\n• ${self ? 'คุณ' : 'ผู้ใช้'}จะถูกออกจากระบบทุกเครื่อง\n• ล็อกอินครั้งถัดไปจะได้ QR ใหม่ให้สแกน${self ? '\n\nนี่คือบัญชีของคุณเอง — ระบบจะออกจากระบบทันที' : ''}\n\nควรยืนยันตัวตนเจ้าของบัญชีก่อน (เช่น ให้มาพบด้วยตัวเอง)`,
+      okText: 'รีเซ็ต 2FA',
+      danger: true,
+    });
+    if (!ok) return;
+    setBusy('mfa');
+    try {
+      await staffApi(`/admin/users/${user.user_id}/reset-mfa`, { method: 'POST', body: {} });
+      toast(`รีเซ็ต 2FA ของ ${user.username} แล้ว`);
+      if (self) return onSelfReset();
+      onSaved(); onClose();
+    } catch (err) { toast(err.message, 'error'); }
     finally { setBusy(null); }
   };
 
@@ -129,6 +175,16 @@ function UserSheet({ user, practitioners, isDev, onClose, onSaved }) {
           </Field>
         )}
         <Switch checked={form.is_active} onChange={(v) => setForm({ ...form, is_active: v })} label="เปิดใช้งาน" description="ปิดแล้วบัญชีนี้ล็อกอินไม่ได้ทันที" />
+        {form.role !== 'KIOSK' && (
+          <MfaSection
+            form={form}
+            setForm={setForm}
+            user={isNew ? null : user}
+            requiredByRole={mfaRoles.includes(form.role)}
+            busy={busy === 'mfa'}
+            onReset={resetMfa}
+          />
+        )}
         <div className="rounded-2xl bg-sand p-4">
           <Field label={isNew ? 'รหัสผ่านเริ่มต้น' : 'ตั้งรหัสผ่านชั่วคราวใหม่'} hint="อย่างน้อย 8 ตัวอักษร ผู้ใช้ต้องเปลี่ยนเองตอนล็อกอินครั้งถัดไป">
             <Input type="text" value={pw} onChange={(e) => setPw(e.target.value)} autoComplete="new-password" />
@@ -137,6 +193,37 @@ function UserSheet({ user, practitioners, isDev, onClose, onSaved }) {
         </div>
       </div>
     </Sheet>
+  );
+}
+
+/** กล่อง 2FA ในหน้าแก้ไขบัญชี: สวิตช์บังคับใช้ + สถานะ + ปุ่มรีเซ็ต */
+function MfaSection({ form, setForm, user, requiredByRole, busy, onReset }) {
+  const state = user?.mfa_state;
+  return (
+    <div className="rounded-2xl border border-line p-4">
+      <div className="mb-3 flex items-center gap-2 font-medium"><Smartphone className="size-5 text-herb" aria-hidden />ยืนยันตัวตน 2 ชั้น (แอป Authenticator)</div>
+      <Switch
+        checked={requiredByRole || !!form.totp_required}
+        disabled={requiredByRole}
+        onChange={(v) => setForm({ ...form, totp_required: v })}
+        label="บังคับใช้กับบัญชีนี้"
+        description={requiredByRole
+          ? `${ROLE_LABEL[form.role]}ต้องใช้เสมอ (ตั้งในระบบ)`
+          : 'เปิดแล้ว ผู้ใช้ต้องสแกน QR ตอนล็อกอินครั้งถัดไป และต้องกรอกรหัสจากแอปทุกครั้ง'}
+      />
+      {user && (
+        <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-line pt-4">
+          <div className="text-[15px]">
+            <MfaBadge user={user} />
+            {state === 'ENABLED' && <div className="mt-1 text-[14px] text-muted">ผูกเมื่อ {String(user.mfa_enabled_at).slice(0, 16).replace('T', ' ')} · รหัสสำรองเหลือ {user.recovery_left} ชุด</div>}
+            {state === 'PENDING' && <div className="mt-1 text-[14px] text-muted">จะเห็น QR ให้สแกนตอนล็อกอินครั้งถัดไป</div>}
+          </div>
+          {state === 'ENABLED' && (
+            <Button size="sm" variant="outline" icon={RotateCcw} loading={busy} onClick={onReset}>รีเซ็ต 2FA (มือถือหาย/เปลี่ยนเครื่อง)</Button>
+          )}
+        </div>
+      )}
+    </div>
   );
 }
 

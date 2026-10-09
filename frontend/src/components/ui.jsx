@@ -157,7 +157,7 @@ export function ConfirmProvider({ children }) {
           </div>
         }
       >
-        <div className="text-muted">{state?.body}</div>
+        <div className="whitespace-pre-line text-muted">{state?.body}</div>
       </Sheet>
     </ConfirmCtx.Provider>
   );

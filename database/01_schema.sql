@@ -95,10 +95,31 @@ CREATE TABLE staff_users (
   practitioner_id      INT NULL,                           -- ใช้เมื่อ role = PRACTITIONER
   must_change_password BOOLEAN NOT NULL DEFAULT TRUE,
   is_active            BOOLEAN NOT NULL DEFAULT TRUE,
+  -- ยืนยันตัวตน 2 ชั้น (TOTP / แอป Authenticator) — ดู backend/src/utils/totp.js
+  --   totp_secret_enc  กุญแจลับ (เข้ารหัส AES-256-GCM)  · มีค่าแต่ totp_enabled_at ว่าง = สแกน QR แล้วแต่ยังไม่ยืนยัน
+  --   totp_required    แอดมินบังคับให้บัญชีนี้ใช้ 2FA (ADMIN / DEV บังคับเสมอตาม MFA_REQUIRED_ROLES ใน .env)
+  --   totp_last_step   ช่วงเวลาของรหัสล่าสุดที่ใช้ — กันนำรหัสเดิมมาใช้ซ้ำ
+  totp_secret_enc      VARCHAR(255) NULL,
+  totp_enabled_at      TIMESTAMP NULL,
+  totp_required        BOOLEAN NOT NULL DEFAULT FALSE,
+  totp_last_step       BIGINT NULL,
+  -- เพิ่มค่าทุกครั้งที่รีเซ็ตรหัสผ่าน / รีเซ็ต 2FA → session เดิมทุกเครื่องใช้ไม่ได้ทันที
+  session_version      INT NOT NULL DEFAULT 0,
   last_login_at        TIMESTAMP NULL,
   created_at           TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at           TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   CONSTRAINT fk_staff_practitioner FOREIGN KEY (practitioner_id) REFERENCES practitioners(practitioner_id)
+);
+
+-- รหัสสำรอง 2FA (กรณีมือถือหาย) — เก็บเป็น HMAC เท่านั้น ใช้ได้ชุดละครั้ง
+CREATE TABLE staff_recovery_codes (
+  code_id     INT AUTO_INCREMENT PRIMARY KEY,
+  user_id     INT      NOT NULL,
+  code_hash   CHAR(64) NOT NULL,
+  used_at     TIMESTAMP NULL,
+  created_at  TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE KEY uq_recovery (user_id, code_hash),
+  CONSTRAINT fk_recovery_user FOREIGN KEY (user_id) REFERENCES staff_users(user_id) ON DELETE CASCADE
 );
 
 -- ---------------------------------------------------------------------
