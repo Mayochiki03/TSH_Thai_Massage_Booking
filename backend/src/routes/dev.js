@@ -121,7 +121,17 @@ devRouter.post('/connection/test', ah(async (req, res) => {
       const data = await r.json().catch(() => null);
       return res.json({ ok: r.ok && data?.ok === true, status: r.status, error: r.ok ? null : `HTTP ${r.status}` });
     } catch (err) {
-      return res.json({ ok: false, error: `เปิดไม่ได้: ${err.message}` });
+      // "fetch failed" ของ Node ไม่บอกสาเหตุ — สาเหตุจริงอยู่ใน err.cause.code
+      const code = err.cause?.code ?? err.name;
+      const hint = {
+        ENOTFOUND: 'หาโดเมนไม่เจอ — Public URL อาจเป็น URL tunnel เก่าที่ปิดไปแล้ว',
+        EAI_AGAIN: 'DNS ไม่ตอบ — เน็ตของเครื่องนี้หาชื่อโดเมนไม่ได้ชั่วคราว',
+        ECONNREFUSED: 'ปลายทางปฏิเสธการเชื่อมต่อ',
+        ECONNRESET: 'การเชื่อมต่อถูกตัดกลางทาง',
+        UND_ERR_CONNECT_TIMEOUT: 'เชื่อมต่อไม่ทันเวลา — เน็ตช้าหรือถูก firewall บล็อก',
+        TimeoutError: 'รอเกิน 8 วินาที — tunnel อาจหลุดอยู่',
+      }[code];
+      return res.json({ ok: false, error: `เปิดไม่ได้ (${code})${hint ? `: ${hint}` : `: ${err.message}`}`, url: c.publicBaseUrl });
     }
   }
   if (what === 'token') return res.json(await getBotInfo());

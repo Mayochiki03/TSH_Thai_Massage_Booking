@@ -31,10 +31,16 @@ export const config = {
   // โฟลเดอร์หน้าเว็บที่ build แล้ว (ค่าเริ่มต้น: ../frontend/dist ข้างโฟลเดอร์ backend)
   frontendDist: path.resolve(process.env.FRONTEND_DIST || fileURLToPath(new URL('../../frontend/dist', import.meta.url))),
   enableCron: (process.env.ENABLE_CRON ?? 'true') === 'true',
+  // role ที่ต้องใช้ 2FA เสมอ (คั่นด้วย ,) — ค่าเริ่มต้น DEV,ADMIN · KIOSK ไม่ใช้ 2FA เสมอ (เครื่องกลาง ไม่มีเจ้าของมือถือ)
+  // ว่าง = ไม่บังคับตาม role (ใช้กับเครื่องทดสอบอัตโนมัติเท่านั้น) — บน production ห้ามว่าง
+  mfaRequiredRoles: (process.env.MFA_REQUIRED_ROLES ?? 'DEV,ADMIN').split(',').map((r) => r.trim().toUpperCase()).filter(Boolean),
 };
 
 if (!/^[0-9a-f]{64}$/i.test(config.appSecretKey)) {
   throw new Error('APP_SECRET_KEY ต้องเป็น hex 64 ตัว (สร้างด้วย npm run gen-key)');
+}
+if (config.isProd && !config.mfaRequiredRoles.includes('ADMIN')) {
+  throw new Error('production ต้องบังคับ 2FA สำหรับ ADMIN (MFA_REQUIRED_ROLES)');
 }
 if (config.isProd && (config.jwtSecret.startsWith('dev_only') || /^0+$/.test(config.appSecretKey))) {
   throw new Error('ห้ามใช้ JWT_SECRET / APP_SECRET_KEY ค่าตัวอย่างบน production');

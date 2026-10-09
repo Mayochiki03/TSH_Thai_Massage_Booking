@@ -22,6 +22,8 @@ import { patientInput, idParam, dateStr, timeStr, vnInput, nationalIdInput } fro
 import { setNationalId } from '../services/patients.js';
 import { revealThaiId, maskThaiId } from '../utils/nationalId.js';
 import { nidSearchHash } from './staff.js';
+import { resetMfa } from '../services/mfa.js';
+import { config } from '../config.js';
 
 export const adminRouter = Router();
 adminRouter.use(requireRole('ADMIN'));
@@ -448,6 +450,8 @@ const userBody = z.object({
   role: z.enum(['DEV', 'ADMIN', 'STAFF', 'PRACTITIONER', 'KIOSK']),
   practitioner_id: z.coerce.number().int().positive().optional().nullable(),
   is_active: z.boolean().default(true),
+  // บังคับ 2FA รายคน (STAFF / PRACTITIONER) — ADMIN/DEV บังคับตาม MFA_REQUIRED_ROLES อยู่แล้ว, KIOSK ไม่ใช้
+  totp_required: z.boolean().optional(), // ไม่ส่งมา = ไม่เปลี่ยน
 }).refine((b) => b.role !== 'PRACTITIONER' || b.practitioner_id, { message: 'บัญชีหมอนวดต้องเลือกหมอนวด', path: ['practitioner_id'] });
 
 /**
@@ -462,12 +466,32 @@ async function guardDevAccounts(req, newRole, targetId) {
   if (newRole === 'DEV' || target?.role === 'DEV') throw badRequest('DEV_ONLY', 'บัญชีนักพัฒนาจัดการได้โดยนักพัฒนาเท่านั้น');
 }
 
+/**
+ * รายชื่อบัญชี + สถานะ 2FA
+ *   mfa_state: ENABLED = ผูกแอปแล้ว · PENDING = ต้องใช้แต่ยังไม่ผูก (จะได้ QR ตอนล็อกอินครั้งถัดไป) · OFF = ไม่ใช้
+ */
 adminRouter.get('/users', ah(async (_req, res) => {
+  const rows = await query(
+    `SELECT u.user_id, u.username, u.full_name, u.role, u.practitioner_id, u.is_active, u.must_change_password,
+            u.last_login_at, u.created_at, u.totp_required, u.totp_enabled_at,
+            (SELECT COUNT(*) FROM staff_recovery_codes rc WHERE rc.user_id = u.user_id AND rc.used_at IS NULL) AS recovery_left
+       FROM staff_users u ORDER BY u.role, u.username`,
+  );
+  const roles = config.mfaRequiredRoles;
   res.json({
-    users: await query(
-      `SELECT user_id, username, full_name, role, practitioner_id, is_active, must_change_password, last_login_at, created_at
-         FROM staff_users ORDER BY role, username`,
-    ),
+    mfa_required_roles: roles,
+    users: rows.map(({ totp_enabled_at: enabledAt, ...u }) => {
+      const requiredByRole = u.role !== 'KIOSK' && roles.includes(u.role);
+      const required = u.role !== 'KIOSK' && (requiredByRole || !!u.totp_required);
+      return {
+        ...u,
+        totp_required: !!u.totp_required,
+        mfa_required_by_role: requiredByRole,
+        mfa_enabled_at: enabledAt,
+        mfa_state: enabledAt ? 'ENABLED' : required ? 'PENDING' : 'OFF',
+        recovery_left: Number(u.recovery_left),
+      };
+    }),
   });
 }));
 
@@ -476,9 +500,10 @@ adminRouter.post('/users', ah(async (req, res) => {
   const password = z.string().min(8, 'รหัสผ่านอย่างน้อย 8 ตัวอักษร').parse(req.body.password);
   await guardDevAccounts(req, b.role, null);
   const r = await query(
-    `INSERT INTO staff_users (username, password_hash, full_name, role, practitioner_id, is_active, must_change_password)
-     VALUES (?, ?, ?, ?, ?, ?, TRUE)`,
-    [b.username, await bcrypt.hash(password, 10), b.full_name, b.role, b.role === 'PRACTITIONER' ? b.practitioner_id : null, b.is_active],
+    `INSERT INTO staff_users (username, password_hash, full_name, role, practitioner_id, is_active, must_change_password, totp_required)
+     VALUES (?, ?, ?, ?, ?, ?, TRUE, ?)`,
+    [b.username, await bcrypt.hash(password, 10), b.full_name, b.role, b.role === 'PRACTITIONER' ? b.practitioner_id : null, b.is_active,
+      b.role !== 'KIOSK' && !!b.totp_required],
   );
   await audit(req, 'CREATE', 'staff_users', r.insertId, { username: b.username, role: b.role });
   res.status(201).json({ user_id: r.insertId });
@@ -492,11 +517,17 @@ adminRouter.put('/users/:id', ah(async (req, res) => {
   if (id === req.staff.user_id && (!b.is_active || b.role !== req.staff.role)) {
     throw badRequest('SELF_LOCKOUT', 'ปิดใช้งานหรือเปลี่ยนสิทธิ์บัญชีตัวเองไม่ได้');
   }
+  const before = await queryOne('SELECT totp_required FROM staff_users WHERE user_id = ?', [id]);
+  if (!before) throw notFound();
+  const totpRequired = b.role !== 'KIOSK' && (b.totp_required ?? !!before.totp_required);
+  // เพิ่งเปิด "บังคับ 2FA" → ตัด session ปัจจุบัน ให้ไปผูกแอปตอนล็อกอินใหม่ทันที (ไม่ต้องรอ session หมดอายุ)
+  const bump = totpRequired && !before.totp_required && id !== req.staff.user_id;
   await query(
-    'UPDATE staff_users SET username = ?, full_name = ?, role = ?, practitioner_id = ?, is_active = ? WHERE user_id = ?',
-    [b.username, b.full_name, b.role, b.role === 'PRACTITIONER' ? b.practitioner_id : null, b.is_active, id],
+    `UPDATE staff_users SET username = ?, full_name = ?, role = ?, practitioner_id = ?, is_active = ?, totp_required = ?,
+            session_version = session_version + ? WHERE user_id = ?`,
+    [b.username, b.full_name, b.role, b.role === 'PRACTITIONER' ? b.practitioner_id : null, b.is_active, totpRequired, bump ? 1 : 0, id],
   );
-  await audit(req, 'UPDATE', 'staff_users', id, { role: b.role, is_active: b.is_active });
+  await audit(req, 'UPDATE', 'staff_users', id, { role: b.role, is_active: b.is_active, totp_required: totpRequired });
   res.json({ ok: true });
 }));
 
@@ -504,9 +535,26 @@ adminRouter.post('/users/:id/reset-password', ah(async (req, res) => {
   const id = idParam.parse(req.params.id);
   const password = z.string().min(8, 'รหัสผ่านอย่างน้อย 8 ตัวอักษร').parse(req.body?.password);
   await guardDevAccounts(req, null, id);
-  await query('UPDATE staff_users SET password_hash = ?, must_change_password = TRUE WHERE user_id = ?', [await bcrypt.hash(password, 10), id]);
+  // ตัด session เดิมทุกเครื่องด้วย (กรณีรหัสหลุด)
+  await query('UPDATE staff_users SET password_hash = ?, must_change_password = TRUE, session_version = session_version + 1 WHERE user_id = ?',
+    [await bcrypt.hash(password, 10), id]);
   await audit(req, 'RESET_PASSWORD', 'staff_users', id);
   res.json({ ok: true });
+}));
+
+/**
+ * รีเซ็ต 2FA (มือถือหาย / เปลี่ยนเครื่อง / ลบแอปไปแล้ว)
+ *   ล้างกุญแจเดิม + รหัสสำรอง → แอปในมือถือเครื่องเก่าใช้ไม่ได้ทันที
+ *   ตัด session ทุกเครื่องของบัญชีนั้น → ล็อกอินครั้งถัดไปจะได้ QR ใหม่ (ถ้ายังถูกบังคับใช้ 2FA)
+ */
+adminRouter.post('/users/:id/reset-mfa', ah(async (req, res) => {
+  const id = idParam.parse(req.params.id);
+  await guardDevAccounts(req, null, id);
+  const target = await queryOne('SELECT username FROM staff_users WHERE user_id = ?', [id]);
+  if (!target) throw notFound();
+  await resetMfa(id);
+  await audit(req, 'RESET_MFA', 'staff_users', id, { username: target.username, reason: z.string().trim().max(200).optional().parse(req.body?.reason) });
+  res.json({ ok: true, self: id === req.staff.user_id });
 }));
 
 // =====================================================================
