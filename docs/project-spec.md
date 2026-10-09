@@ -33,7 +33,7 @@
 **Stack:**
 - Frontend: React (Vite) + Tailwind CSS + LIFF SDK
 - Backend: Node.js / Express (REST API + cron)
-- DB: MySQL 8
+- DB: MariaDB 10.11 (เดิม MySQL 8 — เปลี่ยนใน v0.8.0 ตามมาตรฐานโรงพยาบาล)
 - Deploy: server local ของ รพ. ออกอินเทอร์เน็ตผ่าน Cloudflare Tunnel (เฉพาะหน้าจอง)
 
 | ผู้ใช้ | ทำอะไรได้ |

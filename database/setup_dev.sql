@@ -7,7 +7,7 @@
 -- ⚠ DROP DATABASE — ข้อมูลเดิมหายทั้งหมด ใช้กับเครื่อง dev เท่านั้น
 -- =====================================================================
 
-SET NAMES utf8mb4;   -- สำคัญ: กันภาษาไทยเพี้ยนตอนรันผ่าน CLI บน Windows
+SET NAMES utf8mb4 COLLATE utf8mb4_unicode_ci;   -- สำคัญ: กันภาษาไทยเพี้ยนตอนรันผ่าน CLI บน Windows
 
 DROP DATABASE IF EXISTS thai_massage_booking;
 

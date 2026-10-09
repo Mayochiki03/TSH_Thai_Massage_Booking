@@ -4,7 +4,7 @@
 --   mysql -u root -p -e "source migrations/001_roles_kiosk.sql"
 -- (ถ้ารัน setup_dev.sql ใหม่ทั้งหมด ไม่ต้องรันไฟล์นี้)
 -- =====================================================================
-SET NAMES utf8mb4;
+SET NAMES utf8mb4 COLLATE utf8mb4_unicode_ci;
 USE thai_massage_booking;
 
 -- เพิ่ม role นักพัฒนา (DEV) และบัญชีเครื่อง kiosk (KIOSK)

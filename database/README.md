@@ -1,6 +1,8 @@
 # Database — ระบบจองคิวนวดแผนไทย
 
-MySQL 8.0+ · utf8mb4 · ทดสอบกับ MySQL 8.0.46 แล้ว
+MariaDB 10.11 LTS · utf8mb4 / utf8mb4_unicode_ci · ทดสอบกับ MariaDB 10.11.14 (และ MySQL 8.0.46) แล้ว
+
+คู่มือติดตั้งเต็ม (Windows dev, ย้ายจาก MySQL, Ubuntu server): [docs/INSTALL.md](../docs/INSTALL.md)
 
 ## ไฟล์
 
@@ -12,22 +14,23 @@ MySQL 8.0+ · utf8mb4 · ทดสอบกับ MySQL 8.0.46 แล้ว
 | `03_seed.sql` | ค่าตั้งต้น: แอดมิน, หมอนวด, รอบเวลา, วันหยุด, settings, ข้อความแจ้งเตือน + สร้าง slot 14 วัน | dev / prod |
 | `04_dev_sample.sql` | ข้อมูลตัวอย่าง: ผู้รับบริการ 5 คน, LINE จำลอง 3 บัญชี, คิวครบทุกสถานะ | **dev เท่านั้น** |
 | `setup_dev.sql` | ล้าง DB แล้วรัน 00 → 04 ทั้งหมด | **dev เท่านั้น** |
-| `migrations/001_roles_kiosk.sql` | อัปเกรด DB เดิม (v0.2) → v0.3 โดยไม่ล้างข้อมูล: role DEV/KIOSK, ช่องทาง KIOSK, บัญชี dev | DB ที่มีข้อมูลแล้ว |
+| `setup_prod.sql` | รัน 00 → 03 (ไม่มีข้อมูลตัวอย่าง) | **production ครั้งแรก** |
+| `setup_empty.sql` | ล้าง DB แล้วรัน 00 → 02 (โครงสร้างเปล่า) | ย้ายข้อมูลจากฐานข้อมูลเดิม |
+| `setup_test_user.sql` | user `massage_test` สิทธิ์เฉพาะ `thai_massage_booking_test` | เครื่อง dev / CI (npm test) |
+| `migrations/00X_*.sql` | อัปเกรด DB เดิมโดยไม่ล้างข้อมูล (ลำดับดูใน README หลัก) | DB ที่มีข้อมูลแล้ว |
 
 ## ติดตั้ง (Windows)
 
 เปิด PowerShell หรือ CMD ที่โฟลเดอร์ `database` แล้วรัน:
 
 ```powershell
-mysql -u root -p -e "source setup_dev.sql"
+& "C:\Program Files\MariaDB 10.11\bin\mariadb.exe" -u root -p -P 3307 -e "source setup_dev.sql"
 ```
 
-> ถ้าขึ้น `mysql is not recognized` ให้ใช้ path เต็ม:
-> `& "C:\Program Files\MySQL\MySQL Server 8.0\bin\mysql.exe" -u root -p -e "source setup_dev.sql"`
->
-> PowerShell ใช้ `mysql ... < file.sql` ไม่ได้ ให้ใช้รูปแบบ `-e "source ..."` ตามด้านบน
+> PowerShell ใช้ `mariadb ... < file.sql` ไม่ได้ ให้ใช้รูปแบบ `-e "source ..."` ตามด้านบน
+> Ubuntu: `sudo mariadb < setup_dev.sql`
 
-ใช้ MySQL Workbench แทนก็ได้: เปิดไฟล์ 00 → 01 → 02 → 03 → 04 แล้วกด Execute ทีละไฟล์ตามลำดับ
+ใช้ HeidiSQL (มากับ MariaDB บน Windows) แทนก็ได้: เปิดไฟล์ 00 → 01 → 02 → 03 → 04 แล้วกด Execute ทีละไฟล์ตามลำดับ
 
 **ผลที่ควรได้:** บรรทัดสุดท้ายขึ้น `dev sample loaded` พร้อมวันที่ตัวอย่าง
 

@@ -14,7 +14,7 @@
 --   3) บันทึกหมอนวดที่นวดจริง (appointments.practitioner_id) และ VN
 --   4) เลขบัตรประชาชน 13 หลักของผู้รับบริการ (เข้ารหัส) — ผู้รับบริการเดิมจะถูกขอให้กรอกตอนจองครั้งถัดไป
 -- =====================================================================
-SET NAMES utf8mb4;
+SET NAMES utf8mb4 COLLATE utf8mb4_unicode_ci;
 USE thai_massage_booking;
 SET time_zone = '+07:00';
 

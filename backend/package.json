@@ -1,12 +1,14 @@
 {
   "name": "thai-massage-booking-backend",
-  "version": "0.7.4",
+  "version": "0.8.1",
   "private": true,
   "type": "module",
   "description": "Backend API — ระบบจองคิวนวดแผนไทย",
   "scripts": {
     "dev": "node --watch src/index.js",
     "start": "node src/index.js",
+    "test": "node test/run.mjs",
+    "test:coverage": "node test/run.mjs --coverage",
     "build:web": "npm --prefix ../frontend run build",
     "gen-key": "node -e \"console.log(require('crypto').randomBytes(32).toString('hex'))\""
   },
@@ -30,5 +32,8 @@
   },
   "overrides": {
     "uuid": "^11.1.1"
+  },
+  "devDependencies": {
+    "c8": "^10.1.3"
   }
 }

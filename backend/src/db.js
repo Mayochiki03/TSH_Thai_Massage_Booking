@@ -1,5 +1,5 @@
 /**
- * db.js — การเชื่อมต่อ MySQL (connection pool) + ตัวช่วย query / transaction
+ * db.js — การเชื่อมต่อ MariaDB / MySQL (connection pool — ใช้ driver mysql2 ได้ทั้งคู่) + ตัวช่วย query / transaction
  *  - ทุก connection ตั้ง time_zone = +07:00 → NOW()/CURDATE() เป็นเวลาไทยเสมอ
  *  - dateStrings: วันที่/เวลาคืนเป็น string ('2026-10-07', '09:00:00') ไม่แปลงเป็น JS Date (กันเวลาเพี้ยน)
  */
@@ -12,7 +12,8 @@ export const pool = mysql.createPool({
   waitForConnections: true,
   connectionLimit: 10,
   // ต้องตรงกับ collation ของฐานข้อมูล (00_create_database.sql) — ไม่งั้นเทียบข้อความกับ view จะ error "Illegal mix of collations"
-  charset: 'UTF8MB4_0900_AI_CI',
+  // utf8mb4_unicode_ci มีทั้งใน MariaDB และ MySQL (utf8mb4_0900_ai_ci มีแค่ MySQL 8)
+  charset: 'UTF8MB4_UNICODE_CI',
   timezone: '+07:00',
   dateStrings: true, // DATE/TIME/TIMESTAMP คืนเป็น string ตามเวลาไทย (ไม่แปลงเป็น JS Date)
 });
@@ -43,7 +44,7 @@ export async function withTx(fn, { retries = 3 } = {}) {
       return result;
     } catch (err) {
       await conn.rollback().catch(() => {});
-      // deadlock: MySQL ยกเลิก transaction หนึ่งเมื่อมีหลาย request ล็อกชนกัน (เช่น ลงทะเบียนคนใหม่พร้อมกัน)
+      // deadlock: ฐานข้อมูลยกเลิก transaction หนึ่งเมื่อมีหลาย request ล็อกชนกัน (เช่น ลงทะเบียนคนใหม่พร้อมกัน)
       // → ทำทั้ง transaction ใหม่ (ทุกอย่างใน fn อยู่ใน DB จึงทำซ้ำได้ปลอดภัย)
       if (err?.code === 'ER_LOCK_DEADLOCK' && attempt < retries) {
         await new Promise((r) => setTimeout(r, 20 + crypto.randomInt(60) * attempt));

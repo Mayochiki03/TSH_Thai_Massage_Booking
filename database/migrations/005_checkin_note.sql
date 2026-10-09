@@ -8,7 +8,7 @@
 --
 -- รันซ้ำได้ · แม่แบบข้อความ LINE: แทนเฉพาะบรรทัดเดิมที่ยังไม่เคยแก้ (ถ้าแอดมินแก้เองแล้วจะไม่แตะ)
 -- =====================================================================
-SET NAMES utf8mb4;
+SET NAMES utf8mb4 COLLATE utf8mb4_unicode_ci;
 USE thai_massage_booking;
 
 INSERT IGNORE INTO settings (setting_key, setting_value, label, category, value_type, sort_order)

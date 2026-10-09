@@ -9,6 +9,48 @@
 
 ---
 
+## [0.8.1] - 2026-10-09
+
+**test อัตโนมัติเข้า repo + coverage สำหรับ SonarQube** — ไม่ต้องรัน migration, ต้อง `npm install` ใน backend (เพิ่ม `c8` สำหรับ dev)
+
+### เพิ่ม
+- `npm test` / `npm run test:coverage` (backend) — 174 ข้อใน 4 ชุด (booking, features, price, mfa) ยิง API จริงกับฐานข้อมูลทดสอบแยก `thai_massage_booking_test`
+  - ทุกชุดล้างแล้วสร้างฐานข้อมูลทดสอบใหม่จาก `database/01–04` ด้วย mysql2 (ไม่ต้องมีโปรแกรม mariadb ใน PATH → รันได้ทั้ง Windows / Linux / Jenkins)
+  - กันพลาด: ชื่อฐานข้อมูลไม่ลงท้าย `_test` → ไม่ยอมรัน
+  - backend ตอนทดสอบใช้พอร์ต 4100/4101 และค่าลับเฉพาะ test → เปิดระบบจริงทิ้งไว้ได้
+  - coverage backend 88.6% (lines) → `backend/coverage/lcov.info`
+- `database/setup_test_user.sql` — user `massage_test` สิทธิ์เฉพาะฐานข้อมูล `_test`
+- `backend/.env.test.example`
+- `docs/INSTALL.md` หัวข้อ จ. — ตั้งค่าและรัน test, ขั้นตอนสแกน SonarQube
+
+### เปลี่ยน
+- `sonar-project.properties`: อ่าน coverage จาก `backend/coverage/lcov.info`, `frontend/**` ไม่นับ coverage (ทดสอบด้วยเบราว์เซอร์ — Bug/ช่องโหว่ยังสแกน), test อยู่ที่ `backend/test`
+- test 2 ข้อที่ผูกกับเวลา (walk-in รอบ 14:30, เช็กอิน kiosk รอบ 13:15) ตรวจผลตามเวลาที่รันจริง — รันตอนไหนของวันก็ไม่ fail ผิด ๆ (walk-in หลัง 15:30 = ข้าม + ตรวจว่าระบบตอบ SLOT_PASSED แทน)
+- backend รับคำสั่งปิดผ่าน IPC เมื่อถูกเปิดโดยตัวรัน test (เพื่อให้เขียนผล coverage ได้บน Windows) — ไม่มีผลตอนใช้งานปกติ
+
+---
+
+## [0.8.0] - 2026-10-09
+
+**เปลี่ยนฐานข้อมูลเป็น MariaDB** ตามมาตรฐานของโรงพยาบาล — ทดสอบกับ MariaDB 10.11.14 ครบทุกชุด (API 174 ข้อ รวมการจองพร้อมกัน, cron, รายงาน Excel, ย้ายข้อมูลจาก MySQL 8)
+
+> ⚠ **ต้องย้ายฐานข้อมูล** — backend เวอร์ชันนี้ใช้ collation `utf8mb4_unicode_ci` ต่อกับฐานข้อมูล MySQL เดิม (สร้างด้วย `utf8mb4_0900_ai_ci`) ไม่ได้ (error "Illegal mix of collations")
+> ทำตาม [docs/INSTALL.md](docs/INSTALL.md) หัวข้อ ข. (ย้ายข้อมูล) หรือ ก.4 (สร้างใหม่ด้วย setup_dev)
+
+### เพิ่ม
+- `docs/INSTALL.md` — คู่มือติดตั้ง: เครื่อง dev Windows (MariaDB พอร์ต 3307), ย้ายข้อมูล MySQL → MariaDB, Ubuntu Server (systemd, ufw, Cloudflare Named Tunnel, backup อัตโนมัติ), ตารางสิ่งที่ต่างกันระหว่าง Windows กับ Ubuntu
+- `database/setup_prod.sql` — สร้างฐานข้อมูลสำหรับเครื่องจริง (โครงสร้าง + ค่าตั้งต้น ไม่มีข้อมูลตัวอย่าง)
+- `database/setup_empty.sql` — โครงสร้างเปล่า ไว้ import ข้อมูลที่ย้ายมา
+- user ฐานข้อมูล `massage_app@127.0.0.1` คู่กับ `@localhost` (MariaDB ที่ตั้ง skip-name-resolve จะไม่นับ TCP 127.0.0.1 เป็น localhost)
+
+### เปลี่ยน
+- collation `utf8mb4_0900_ai_ci` (มีแค่ MySQL 8) → `utf8mb4_unicode_ci` (มีทั้งสองตัว) ทั้งฐานข้อมูล, connection ของแอป และ `SET NAMES` ในทุกสคริปต์ (view ใช้ collation ของ connection ตอนสร้าง)
+- ล็อกรอบเวลาตอนจอง: `JOIN holidays ... FOR UPDATE OF s` (MariaDB ไม่รองรับ `OF`) → อ่านวันหยุดด้วย subquery แล้ว `FOR UPDATE` เฉพาะ time_slots — พฤติกรรมเหมือนเดิม
+- ข้อความเมื่อต่อฐานข้อมูลไม่ได้ บอกพอร์ต `DB_PORT` ที่ใช้อยู่ · หน้า "ข้อมูลระบบ" ของนักพัฒนาเขียน "ฐานข้อมูล" แทน "MySQL"
+- README / database README / .env.example → MariaDB
+
+---
+
 ## [0.7.4] - 2026-10-09
 
 แก้ปัญหาที่เจอตอนหัวหน้าทดลองใช้บนเครื่องอื่น — ต้อง `npm install` ใน backend (เพิ่ม `hyperformula`) ไม่ต้องรัน migration

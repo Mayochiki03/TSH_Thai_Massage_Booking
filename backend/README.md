@@ -1,6 +1,6 @@
 # Backend — ระบบจองคิวนวดแผนไทย
 
-Node.js 20+ · Express · MySQL 8 · ไม่ใช้ Docker
+Node.js 22 LTS · Express · MariaDB 10.11 (ใช้ MySQL 8 ได้) · ไม่ใช้ Docker
 
 รัน 2 พอร์ตแยกกัน:
 
@@ -69,7 +69,7 @@ npm run dev
 src/
   index.js              เปิด 2 พอร์ต + cron
   web.js                ส่งหน้าเว็บ (frontend/dist) แยกตามพอร์ต
-  config.js  db.js      env / MySQL pool (time_zone +07:00)
+  config.js  db.js      env / DB pool (time_zone +07:00)
   middleware/auth.js    ล็อกอินเจ้าหน้าที่ (JWT httpOnly cookie) / LINE ID token / ผู้ใช้จำลอง
   routes/
     public.js           ผู้จอง
@@ -159,6 +159,6 @@ src/
 ```
 `can_force: true` = เจ้าหน้าที่ส่งซ้ำพร้อม `force: true` เพื่อยืนยันได้ · `HAS_BOOKINGS` (ตั้งวันหยุด/บล็อกรอบ) = ส่งซ้ำพร้อม `confirm: true`
 
-## ผลทดสอบ (MySQL 8.0.46, Node 22)
+## ผลทดสอบ (MySQL 8.0.46 → v0.8.0 ทดสอบซ้ำกับ MariaDB 10.11.14, Node 22)
 
 end-to-end 77 กรณีผ่านทั้งหมด (รวมสิทธิ์ DEV/ADMIN/KIOSK, kiosk จอง/เช็กอิน, dashboard) เช่น จองซ้อนพร้อมกัน 5 request สำเร็จ 1 · โควตาวัน/สัปดาห์ · HN ซ้ำแต่ชื่อไม่ตรงถูกปฏิเสธ · ยกเลิกน้อยกว่า 2 ชม. ถูกปฏิเสธ · เช็กอินเร็ว/สายมีคำเตือน · walk-in เช็กอินอัตโนมัติ · หมอนวดต้องเริ่มก่อนจบ · ตั้งวันหยุดที่มีคิว → เตือน → ยกเลิก + แจ้ง · สิทธิ์ตาม role · บังคับเปลี่ยนรหัสผ่าน · ตัด no-show + ระงับสิทธิ์อัตโนมัติ · เตือน 2 ชม. ไม่ส่งซ้ำ

@@ -7,7 +7,7 @@
 --
 -- หลังรัน: บัญชี ADMIN / DEV จะถูกขอให้สแกน QR ตอนล็อกอินครั้งถัดไป
 -- =====================================================================
-SET NAMES utf8mb4;
+SET NAMES utf8mb4 COLLATE utf8mb4_unicode_ci;
 USE thai_massage_booking;
 
 ALTER TABLE staff_users

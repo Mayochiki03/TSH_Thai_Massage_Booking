@@ -58,7 +58,7 @@
                                                             │
        เคาน์เตอร์ / ห้องนวด / ผู้ดูแล / เครื่อง kiosk ───────┼─► :4001  INTERNAL ทุกหน้า + /api/staff, admin, dev, kiosk
                                                             │                │
-                                                            │             MySQL 8
+                                                            │             MariaDB
 ```
 
 - Backend แยก 2 พอร์ต — หน้าเว็บและ API ฝั่งเจ้าหน้าที่ไม่มีอยู่บนพอร์ตที่ออกอินเทอร์เน็ต
@@ -68,15 +68,15 @@
 | ส่วน | ใช้ |
 |---|---|
 | Frontend | React 19, Vite 6, Tailwind CSS 4, React Router 7, lucide-react, LINE LIFF SDK (โหลดเฉพาะตอนใช้ LINE จริง), ฟอนต์ Anuphan + Sarabun ฝังในเว็บ |
-| Backend | Node.js 20+, Express 4, mysql2, zod, bcryptjs, JWT (httpOnly cookie), node-cron |
-| Database | MySQL 8.0 (utf8mb4) |
+| Backend | Node.js 22 LTS, Express 4, mysql2 (ใช้กับ MariaDB), zod, bcryptjs, JWT (httpOnly cookie), node-cron |
+| Database | MariaDB 10.11 LTS (utf8mb4_unicode_ci) — ยังใช้กับ MySQL 8 ได้ |
 
 ```
 TSH_Thai_Massage_Booking/
-├── database/      สคริปต์ MySQL + migrations
+├── database/      สคริปต์ฐานข้อมูล (MariaDB) + migrations
 ├── backend/       Express API (2 พอร์ต) + cron
 ├── frontend/      React: patient / staff / admin / kiosk
-├── docs/          เอกสารสเปก
+├── docs/          สเปก + คู่มือติดตั้ง (INSTALL.md)
 ├── README.md
 └── CHANGELOG.md
 ```
@@ -87,12 +87,14 @@ TSH_Thai_Massage_Booking/
 
 ## เริ่มต้นใช้งาน (เครื่อง dev — Windows)
 
-**ต้องมี:** Node.js 20+ · MySQL 8.0 · Git
+> 📘 **ติดตั้งเครื่องใหม่ / ย้ายจาก MySQL / ขึ้น server Ubuntu: ดู [docs/INSTALL.md](docs/INSTALL.md)** (ละเอียดกว่าส่วนนี้)
+
+**ต้องมี:** Node.js 22 LTS · MariaDB 10.11 (เครื่อง dev ใช้พอร์ต 3307 → ตั้ง `DB_PORT=3307` ใน `.env`) · Git
 
 ```powershell
 # 1) ฐานข้อมูล (ลบแล้วสร้างใหม่ + ข้อมูลตัวอย่าง — dev เท่านั้น)
 cd database
-& "C:\Program Files\MySQL\MySQL Server 8.0\bin\mysql.exe" -u root -p -e "source setup_dev.sql"
+& "C:\Program Files\MariaDB 10.11\bin\mariadb.exe" -u root -p -P 3307 -e "source setup_dev.sql"
 
 # 2) Backend
 cd ..\backend
@@ -123,13 +125,22 @@ npm start          # เปิด backend ตัวเดียว ส่งท�
 > ระหว่างเขียนโค้ดใช้ `npm run dev` + Vite :5173 ตามเดิม — ถ้ามี `frontend/dist` อยู่ backend ก็ส่งหน้าเว็บที่ :4000/:4001 ด้วย แต่เป็นเวอร์ชันตอน build ล่าสุด
 
 > อัปเกรดโดยไม่ล้างข้อมูล (รันในโฟลเดอร์ database ตามลำดับที่ยังไม่เคยรัน):
-> - v0.2 → v0.3: `mysql -u root -p -e "source migrations/001_roles_kiosk.sql"`
-> - v0.5 → v0.6: `mysql -u root -p -e "source migrations/002_beds_services_nid.sql"` (หลายเตียง, ประเภทบริการ, เลขบัตร, หมอนวด, VN) — **สำรองฐานข้อมูลก่อน**
-> - v0.6.0 → v0.6.1: `mysql -u root -p -e "source migrations/003_show_price.sql"` (สวิตช์แสดงราคา)
-> - v0.6.x → v0.7.0: `mysql -u root -p -e "source migrations/004_mfa.sql"` (2FA) — แล้วเพิ่ม `MFA_REQUIRED_ROLES=DEV,ADMIN` ใน `.env` (ไม่ใส่ก็ได้ ค่าเริ่มต้นเท่านี้)
-> - v0.7.1 → v0.7.2: `mysql -u root -p -e "source migrations/005_checkin_note.sql"` (คำแนะนำการมารับบริการ)
+> - v0.2 → v0.3: `mariadb -u root -p -P 3307 -e "source migrations/001_roles_kiosk.sql"`
+> - v0.5 → v0.6: `mariadb -u root -p -P 3307 -e "source migrations/002_beds_services_nid.sql"` (หลายเตียง, ประเภทบริการ, เลขบัตร, หมอนวด, VN) — **สำรองฐานข้อมูลก่อน**
+> - v0.6.0 → v0.6.1: `mariadb -u root -p -P 3307 -e "source migrations/003_show_price.sql"` (สวิตช์แสดงราคา)
+> - v0.6.x → v0.7.0: `mariadb -u root -p -P 3307 -e "source migrations/004_mfa.sql"` (2FA) — แล้วเพิ่ม `MFA_REQUIRED_ROLES=DEV,ADMIN` ใน `.env` (ไม่ใส่ก็ได้ ค่าเริ่มต้นเท่านี้)
+> - v0.7.1 → v0.7.2: `mariadb -u root -p -P 3307 -e "source migrations/005_checkin_note.sql"` (คำแนะนำการมารับบริการ)
 >
-> ถ้าพิมพ์ `mysql` แล้วขึ้น "not recognized" ให้ใช้ที่อยู่เต็ม: `& "C:\Program Files\MySQL\MySQL Server 8.0\bin\mysql.exe" -u root -p ...`
+> คำว่า `mariadb` ในคำสั่งด้านบน บน Windows ให้ใช้ที่อยู่เต็ม: `& "C:\Program Files\MariaDB 10.11\bin\mariadb.exe" -u root -p -P 3307 ...` (บน Ubuntu: `sudo mariadb < migrations/...` ไม่ต้องใส่ -P)
+
+### รัน test อัตโนมัติ
+
+```powershell
+cd backend
+npm test                 # 174 ข้อ กับฐานข้อมูลทดสอบแยก (thai_massage_booking_test)
+npm run test:coverage    # + coverage สำหรับ SonarQube
+```
+ตั้งค่าครั้งแรก (user ทดสอบ + `.env.test`): [docs/INSTALL.md หัวข้อ จ.](docs/INSTALL.md#จ-รัน-test-อัตโนมัติ--สแกน-sonarqube)
 
 ### บัญชีทดสอบ (dev) — รหัสผ่าน `admin1234` ทุกบัญชี
 
@@ -175,7 +186,7 @@ cloudflared tunnel --protocol http2 --url http://127.0.0.1:4000
 - รหัสผ่าน bcrypt · session JWT ใน httpOnly cookie · บังคับเปลี่ยนรหัสผ่านครั้งแรก · ล็อกอินผิดเกิน 10 ครั้ง/15 นาทีถูกพัก
 - **ยืนยันตัวตน 2 ชั้น (แอป Authenticator)** บังคับสำหรับผู้ดูแล/นักพัฒนา เลือกบังคับรายคนได้ · รหัสสำรอง 10 ชุด · แอดมินรีเซ็ตได้เมื่อมือถือหาย · รีเซ็ตแล้ว session เดิมทุกเครื่องหลุด
 - ผู้จองตรวจ LINE ID token ทุก request · kiosk ยืนยันเช็กอินด้วยเลขท้ายเบอร์โทร
-- LINE token และเลขบัตรประชาชนเข้ารหัส AES-256-GCM (เปิดดูเลขเต็มที่หน้าผู้ดูแลถูกบันทึก audit log) · rate limit · helmet · parameterized query · MySQL user สิทธิ์จำกัด
+- LINE token และเลขบัตรประชาชนเข้ารหัส AES-256-GCM (เปิดดูเลขเต็มที่หน้าผู้ดูแลถูกบันทึก audit log) · rate limit · helmet · parameterized query · user ฐานข้อมูลสิทธิ์จำกัด
 - ⚠ **ห้ามเปลี่ยน `APP_SECRET_KEY` หลังมีข้อมูลจริง** — เลขบัตรประชาชนและ LINE token ที่เก็บไว้จะถอดรหัส/ค้นหาไม่ได้ (ตั้งค่าใหม่ก่อนเริ่มใช้งานจริงครั้งเดียว และเก็บสำรองไว้ที่ปลอดภัย)
 - **ก่อนขึ้น production:** เปลี่ยน `JWT_SECRET`, `APP_SECRET_KEY`, รหัส DB, รหัสบัญชีตั้งต้น และ **ห้ามรัน** `04_dev_sample.sql`
 

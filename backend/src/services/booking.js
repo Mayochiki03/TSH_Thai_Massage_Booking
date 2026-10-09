@@ -126,15 +126,16 @@ export async function createBooking(p) {
   const appointmentId = await withTx(async (conn) => {
     // 1) ล็อก slot แถวนี้ — request ที่จอง slot เดียวกันจะต่อคิวกัน
     const [[slot]] = await conn.query(
-      `SELECT s.*, h.name AS holiday_name,
+      // วันหยุดอ่านด้วย subquery (ไม่ล็อก) — ไม่ใช้ JOIN + "FOR UPDATE OF s" เพราะ MariaDB ไม่รองรับ OF
+      `SELECT s.*,
+              (SELECT h.name FROM holidays h WHERE h.holiday_date = s.slot_date LIMIT 1) AS holiday_name,
               TIMESTAMPDIFF(MINUTE, NOW(), TIMESTAMP(s.slot_date, s.start_time)) AS mins_until,
               TIMESTAMPDIFF(MINUTE, NOW(), TIMESTAMP(s.slot_date, s.end_time))   AS mins_until_end,
               DATEDIFF(s.slot_date, CURDATE()) AS days_ahead,
               WEEKDAY(s.slot_date) + 1 AS wd
          FROM time_slots s
-         LEFT JOIN holidays h  ON h.holiday_date = s.slot_date
         WHERE s.slot_id = ?
-        FOR UPDATE OF s`,
+        FOR UPDATE`,
       [p.slotId],
     );
     if (!slot) throw notFound('ไม่พบรอบเวลานี้');
@@ -353,7 +354,7 @@ export async function updateVisitInfo(conn, appointmentId, { vn, service_type_id
     const [[st]] = await conn.query('SELECT price FROM service_types WHERE service_type_id = ? AND is_active = TRUE', [serviceTypeId]);
     if (!st) throw badRequest('SERVICE_TYPE', 'ไม่พบประเภทบริการนี้');
     await conn.query(
-      // MySQL ประเมิน SET จากซ้ายไปขวา → ต้องคำนวณราคาก่อนเปลี่ยน service_type_id (ประเภทเดิม = คงราคาเดิม)
+      // MariaDB/MySQL ประเมิน SET จากซ้ายไปขวา (MariaDB: ถ้าไม่เปิด SQL_MODE SIMULTANEOUS_ASSIGNMENT) → ต้องคำนวณราคาก่อนเปลี่ยน service_type_id (ประเภทเดิม = คงราคาเดิม)
       'UPDATE appointments SET service_price = IF(service_type_id <=> ?, service_price, ?), service_type_id = ? WHERE appointment_id = ?',
       [serviceTypeId, st.price, serviceTypeId, appointmentId],
     );

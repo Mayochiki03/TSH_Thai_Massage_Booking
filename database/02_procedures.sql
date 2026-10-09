@@ -3,7 +3,7 @@
 -- Stored procedures ที่ backend (cron) เรียกใช้
 -- =====================================================================
 
-SET NAMES utf8mb4;   -- สำคัญ: กันภาษาไทยเพี้ยนตอนรันผ่าน CLI บน Windows
+SET NAMES utf8mb4 COLLATE utf8mb4_unicode_ci;   -- สำคัญ: กันภาษาไทยเพี้ยนตอนรันผ่าน CLI บน Windows
 
 USE thai_massage_booking;
 

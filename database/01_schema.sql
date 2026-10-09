@@ -6,7 +6,7 @@
 -- backend ต้องตั้ง time_zone = '+07:00' ทุก connection เพื่อให้ NOW()/CURDATE() เป็นเวลาไทย
 -- =====================================================================
 
-SET NAMES utf8mb4;   -- สำคัญ: กันภาษาไทยเพี้ยนตอนรันผ่าน CLI บน Windows
+SET NAMES utf8mb4 COLLATE utf8mb4_unicode_ci;   -- สำคัญ: กันภาษาไทยเพี้ยนตอนรันผ่าน CLI บน Windows
 
 USE thai_massage_booking;
 SET time_zone = '+07:00';

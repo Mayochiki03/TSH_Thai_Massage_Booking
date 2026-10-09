@@ -2,7 +2,7 @@
 -- 03_seed.sql — ข้อมูลตั้งต้นที่ระบบต้องมี (ใช้ทั้ง dev และ production)
 -- =====================================================================
 
-SET NAMES utf8mb4;   -- สำคัญ: กันภาษาไทยเพี้ยนตอนรันผ่าน CLI บน Windows
+SET NAMES utf8mb4 COLLATE utf8mb4_unicode_ci;   -- สำคัญ: กันภาษาไทยเพี้ยนตอนรันผ่าน CLI บน Windows
 
 USE thai_massage_booking;
 SET time_zone = '+07:00';

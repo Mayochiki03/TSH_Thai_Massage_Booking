@@ -105,10 +105,15 @@ async function main() {
   if (publicWeb) console.log(`[web]  ส่งหน้าเว็บจาก ${config.frontendDist}`);
   else console.log('[web]  ยังไม่มี frontend/dist (ยังไม่ได้ build: npm run build:web) — ระหว่างพัฒนาใช้ Vite http://localhost:5173');
   if (config.enableCron) startCron();
+  // ตัวรัน test (test/run.mjs) สั่งปิดผ่าน IPC → ปิดแบบปกติ ให้ Node เขียนผล coverage ได้ (Windows kill แล้วไม่เขียน)
+  if (process.send) {
+    process.on('message', (m) => { if (m === 'shutdown') process.exit(0); });
+    process.send('ready');
+  }
 }
 
 main().catch((err) => {
-  console.error('เปิดเซิร์ฟเวอร์ไม่สำเร็จ:', err.code === 'ECONNREFUSED' ? 'ต่อ MySQL ไม่ได้ — MySQL เปิดอยู่ไหม?'
+  console.error('เปิดเซิร์ฟเวอร์ไม่สำเร็จ:', err.code === 'ECONNREFUSED' ? `ต่อฐานข้อมูลไม่ได้ — MariaDB เปิดอยู่ไหม? พอร์ตตรงกับ DB_PORT=${process.env.DB_PORT || 3306} ใน .env ไหม?`
     : err.code === 'ER_ACCESS_DENIED_ERROR' ? 'DB_USER / DB_PASSWORD ใน .env ไม่ถูกต้อง' : err.message);
   process.exit(1);
 });

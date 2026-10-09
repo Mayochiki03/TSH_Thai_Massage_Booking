@@ -12,6 +12,7 @@ dist/
 .env
 .env.*
 !.env.example
+!.env.test.example
 *.pem
 *.key
 # credential ของ Cloudflare Tunnel
@@ -57,3 +58,9 @@ npm-debug.log*
 .DS_Store
 Thumbs.db
 desktop.ini
+
+# =====================================================================
+# ผลจาก test
+# =====================================================================
+coverage/
+backend/test/.logs/

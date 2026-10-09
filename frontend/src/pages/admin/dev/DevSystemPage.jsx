@@ -1,7 +1,7 @@
 /**
  * pages/admin/dev/DevSystemPage.jsx — เมนูนักพัฒนา: ระบบและเครื่องมือ
  *
- *  - ข้อมูลระบบ        : เวอร์ชัน Node/MySQL, โหมด, พอร์ต, เวลาฐานข้อมูล, จำนวนข้อมูล (GET /api/dev/system)
+ *  - ข้อมูลระบบ        : เวอร์ชัน Node/ฐานข้อมูล (MariaDB), โหมด, พอร์ต, เวลาฐานข้อมูล, จำนวนข้อมูล (GET /api/dev/system)
  *  - สั่งรันงานตั้งเวลา : สร้างรอบ / ตัด no-show / ส่งเตือน — ไม่ต้องรอเวลา cron (POST /api/dev/jobs/:name)
  *  - ล้างข้อมูลทดสอบ    : ลบผู้รับบริการ/การจอง/บัญชี LINE ทั้งหมด ก่อนขึ้นใช้งานจริง (POST /api/dev/clear-test-data)
  */
@@ -46,7 +46,7 @@ export function DevSystemPage() {
     ['โหมดการเชื่อมต่อ', MODE_LABEL[sys.mode]],
     ['สภาพแวดล้อม', sys.env],
     ['Node.js', sys.node],
-    ['MySQL', sys.mysql],
+    ['ฐานข้อมูล', sys.mysql],
     ['เวลาในฐานข้อมูล', sys.db_time],
     ['เปิดเซิร์ฟเวอร์มาแล้ว', `${Math.floor(sys.uptime_sec / 3600)} ชม. ${Math.floor((sys.uptime_sec % 3600) / 60)} นาที`],
     ['พอร์ต public / internal', `${sys.ports.public} / ${sys.ports.internal}`],
